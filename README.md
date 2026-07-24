@@ -43,7 +43,11 @@ Buckets: **ALERT ≥8 · REVIEW 4–7 · INFO <4.** Microsoft-signed is allowlis
 
 3. Unzip and run `SpyScan.exe`. The exe is currently **unsigned**, so SmartScreen will warn
    (“More info → Run anyway”) — that is exactly why the hashes are published, and Option B
-   exists if you'd rather build from source.
+   exists if you'd rather build from source. You can also cross-check the exe on
+   [VirusTotal](https://www.virustotal.com/gui/file/a10f63d94348c61c1739e7c34db66319887e497a5071477d91e733dad06841f9);
+   a few heuristic engines may flag any unsigned PyInstaller one-file exe (the
+   self-extracting packaging resembles how some malware bundles itself — a known
+   false-positive source).
 4. In the app: **Set baseline** on a machine you trust is clean; later, **Scan now**.
 
 ### Option B — from source (CLI)

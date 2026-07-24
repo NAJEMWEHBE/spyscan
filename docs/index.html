@@ -103,6 +103,7 @@
 
 a10f63d94348c61c1739e7c34db66319887e497a5071477d91e733dad06841f9  SpyScan.exe
 aa870f170cfba95625a4c727be7e6835cdefa01e96a7dda4a0602025bf3e8f20  SpyScan-v0.1.0-win64.zip</pre>
+  <p style="color: var(--muted); margin-top: 12px;">Cross-check it yourself: <a href="https://www.virustotal.com/gui/file/a10f63d94348c61c1739e7c34db66319887e497a5071477d91e733dad06841f9">VirusTotal scan of SpyScan.exe</a>. A few heuristic engines may flag any unsigned PyInstaller one-file exe — that packaging pattern (self-extracting Python runtime) resembles how some malware bundles itself, which is a known false-positive source. The source is open; when in doubt, build it yourself.</p>
   <p style="color: var(--muted); margin-top: 12px;">Prefer auditable? Clone the repo, <code>pip install -e .</code>, run <code>spyscan-app</code> (Python 3.13+).</p>
 </section>
 
