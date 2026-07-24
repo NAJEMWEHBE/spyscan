@@ -73,7 +73,7 @@ All three feed one weighted **risk score** + a per-finding severity with evidenc
 
 ## Folder
 
-`F:\ai\spy-detector\` — `docs/` (this + research brief + build plan), `src/` (Python agent).
+Repo root — `docs/` (this + research brief + build plan), `src/` (Python agent).
 
 ---
 

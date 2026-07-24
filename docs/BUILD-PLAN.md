@@ -19,7 +19,7 @@
 3. **Local-only.** No network calls except the explicit IOC-feed updater (Phase 2). No telemetry. Reports written under the project's `runs/` dir only.
 4. **Allowlist before alarm.** Microsoft-signed + known-good-hash entities are scored down. Every finding carries human-readable `evidence` and a MITRE `attack_id` so the user can judge.
 5. **Honest limits in every report.** Footer states: usermode scanner, can miss kernel-hidden implants; a clean result ≠ a clean device.
-6. **Exact paths.** All code under `F:\ai\spy-detector\`. Python package root: `src/spyscan/`. Tests: `tests/`.
+6. **Exact paths.** All code under the repo root. Python package root: `src/spyscan/`. Tests: `tests/`.
 7. **Commit after every green task.** `git init` happens in Task 0.
 
 ---
@@ -27,7 +27,7 @@
 ## File structure (locked before tasks)
 
 ```
-F:\ai\spy-detector\
+<repo root>\
   pyproject.toml                 # package metadata + deps + pytest config
   src/spyscan/
     __init__.py
@@ -94,10 +94,10 @@ Outcome: `spyscan baseline` then `spyscan scan` reports NEW autostart entries si
 ### Task 0: Project scaffold + repo
 
 **Files:**
-- Create: `F:\ai\spy-detector\pyproject.toml`
-- Create: `F:\ai\spy-detector\.gitignore`
-- Create: `F:\ai\spy-detector\src\spyscan\__init__.py`
-- Create: `F:\ai\spy-detector\tests\conftest.py`
+- Create: `pyproject.toml`
+- Create: `.gitignore`
+- Create: `src\spyscan\__init__.py`
+- Create: `tests\conftest.py`
 
 - [ ] **Step 1: Write `pyproject.toml`**
 
@@ -154,7 +154,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 Run:
 ```bash
-cd /f/ai/spy-detector
+cd spy-detector
 py -3.14 -m venv .venv
 .venv/Scripts/python -m pip install -e ".[dev]"
 .venv/Scripts/python -m pytest -q
@@ -164,7 +164,7 @@ Expected: `no tests ran` (exit 5) — environment works.
 - [ ] **Step 5: Commit**
 
 ```bash
-cd /f/ai/spy-detector && git init && git add -A && git commit -m "chore: scaffold spyscan package + pytest"
+git init && git add -A && git commit -m "chore: scaffold spyscan package + pytest"
 ```
 
 ---
@@ -413,7 +413,7 @@ git add src/spyscan/diff.py tests/test_diff.py && git commit -m "feat: baseline 
 
 Run (after dropping `autorunsc64.exe` into `tools/`):
 ```bash
-cd /f/ai/spy-detector
+cd spy-detector
 tools/autorunsc64.exe -accepteula -a * -c -h -s -nobanner > tests/fixtures/autorunsc_real.csv 2>/dev/null
 head -1 tests/fixtures/autorunsc_real.csv
 ```
