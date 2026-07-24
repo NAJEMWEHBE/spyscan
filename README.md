@@ -32,14 +32,33 @@ Buckets: **ALERT ≥8 · REVIEW 4–7 · INFO <4.** Microsoft-signed is allowlis
 
 ## Quick start
 
+### Option A — packaged app (no Python needed)
+
+1. Download `SpyScan-v0.1.0-win64.zip` from [Releases](https://github.com/NAJEMWEHBE/spyscan/releases).
+2. Verify it against `SHA256SUMS.txt` from the same release:
+
+   ```powershell
+   Get-FileHash .\SpyScan-v0.1.0-win64.zip -Algorithm SHA256
+   ```
+
+3. Unzip and run `SpyScan.exe`. The exe is currently **unsigned**, so SmartScreen will warn
+   (“More info → Run anyway”) — that is exactly why the hashes are published, and Option B
+   exists if you'd rather build from source.
+4. In the app: **Set baseline** on a machine you trust is clean; later, **Scan now**.
+
+### Option B — from source (CLI)
+
 ```powershell
-cd F:\ai\spy-detector
+git clone https://github.com/NAJEMWEHBE/spyscan.git
+cd spyscan
+python -m venv .venv          # Python 3.13+
+.\.venv\Scripts\pip install -e .
 
 # 1. Take a baseline — DO THIS ON A MACHINE YOU TRUST IS CLEAN
-.\.venv\Scripts\python -m spyscan.cli baseline
+.\.venv\Scripts\spyscan baseline
 
 # 2. Later, scan for what changed / looks like spying
-.\.venv\Scripts\python -m spyscan.cli scan
+.\.venv\Scripts\spyscan scan
 
 # 3. Open the report
 start runs\last_scan.html
@@ -171,7 +190,7 @@ expect those to appear from two sources.
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python -m pytest -q   # 252 passing
+.\.venv\Scripts\python -m pytest -q   # 263 passing
 ```
 Pure logic (schema, diff, score, parsers) is fixture-unit-tested; OS-touching collectors are integration-marked.
 
