@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SpyScan — is anything spying on this device?</title>
+<meta name="description" content="Local-only Windows spyware and surveillance awareness scanner. Baseline-diff, mercenary-spyware IOCs, canary tripwires. No cloud, no telemetry.">
+<style>
+  :root {
+    --bg: #0b0f1a; --panel: #111726; --panel2: #0e1420; --border: #1e2941;
+    --text: #dbe4f5; --muted: #8b98b8; --accent: #3b82f6; --accent-h: #2f6fe0;
+    --good: #34d399; --warn: #fbbf24;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font: 16px/1.6 "Segoe UI", system-ui, sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+  header { padding: 72px 0 40px; text-align: center; }
+  .logo { display: inline-flex; align-items: center; gap: 14px; }
+  .logo svg { width: 52px; height: 52px; }
+  h1 { font-size: 44px; letter-spacing: -1px; }
+  .tagline { color: var(--muted); font-size: 20px; margin-top: 8px; }
+  .badges { margin-top: 18px; display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+  .badge { border: 1px solid var(--border); background: var(--panel2); color: var(--muted);
+           border-radius: 999px; padding: 4px 14px; font-size: 13px; }
+  .badge .dot { color: var(--good); }
+  .cta { margin-top: 32px; display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+  .btn { display: inline-block; padding: 13px 28px; border-radius: 10px; text-decoration: none;
+         font-weight: 600; font-size: 16px; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-primary:hover { background: var(--accent-h); }
+  .btn-ghost { border: 1px solid var(--border); color: var(--text); background: var(--panel2); }
+  .btn-ghost:hover { border-color: var(--accent); }
+  .cta-note { margin-top: 12px; color: var(--muted); font-size: 13px; }
+  .shot { margin: 48px auto 0; max-width: 920px; }
+  .shot img { width: 100%; border-radius: 12px; border: 1px solid var(--border);
+              box-shadow: 0 24px 60px rgba(0,0,0,.5); }
+  section { padding: 56px 0 0; }
+  h2 { font-size: 26px; margin-bottom: 20px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(270px, 1fr)); gap: 16px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 22px; }
+  .card h3 { font-size: 17px; margin-bottom: 8px; }
+  .card p { color: var(--muted); font-size: 14.5px; }
+  .limits { background: var(--panel2); border: 1px solid var(--border); border-left: 3px solid var(--warn);
+            border-radius: 12px; padding: 26px; }
+  .limits h2 { margin-bottom: 12px; }
+  .limits ul { margin: 10px 0 0 22px; color: var(--muted); font-size: 15px; }
+  .limits li { margin-bottom: 10px; }
+  .limits a { color: var(--accent); }
+  code, pre { font-family: Consolas, monospace; background: #0a0e18; border: 1px solid var(--border);
+              border-radius: 8px; }
+  code { padding: 2px 7px; font-size: 13.5px; }
+  pre { padding: 16px; overflow-x: auto; font-size: 13px; color: #a8b8d8; margin-top: 12px; }
+  footer { margin-top: 72px; padding: 28px 0 40px; border-top: 1px solid var(--border);
+           color: var(--muted); font-size: 14px; text-align: center; }
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="logo">
+    <svg viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M12 2l8 3.5v5.5c0 5-3.4 9.3-8 10.5C7.4 20.3 4 16 4 11V5.5L12 2z"/>
+      <circle cx="12" cy="11" r="3.2"/><path d="M14.3 13.3l2 2"/>
+    </svg>
+    <h1>spyscan</h1>
+  </div>
+  <p class="tagline">Is anything spying on this device?</p>
+  <div class="badges">
+    <span class="badge"><span class="dot">●</span> local-only · offline</span>
+    <span class="badge">no telemetry</span>
+    <span class="badge">open source · MIT</span>
+    <span class="badge">Windows 10/11 x64</span>
+  </div>
+  <div class="cta">
+    <a class="btn btn-primary" href="https://github.com/NAJEMWEHBE/spyscan/releases/latest">Download for Windows</a>
+    <a class="btn btn-ghost" href="https://github.com/NAJEMWEHBE/spyscan">View source on GitHub</a>
+  </div>
+  <p class="cta-note">Free download · v0.1.0 · unsigned exe (SmartScreen will warn — verify the SHA-256, or run from source)</p>
+  <div class="shot"><img src="app-screenshot.png" alt="SpyScan desktop app: Scan now button, findings table, local-only offline badge"></div>
+</header>
+
+<section>
+  <h2>What it does</h2>
+  <div class="cards">
+    <div class="card"><h3>Baseline, then diff</h3>
+      <p>On a machine you trust, SpyScan snapshots processes, services, drivers, scheduled tasks, autostarts, network connections, and the mic/camera consent store. Every later scan is diffed against that baseline — new or changed persistence is what implants need and what SpyScan surfaces.</p></div>
+    <div class="card"><h3>Known-spyware IOCs</h3>
+      <p>Findings are matched against curated mercenary-spyware and stalkerware indicator lists (process names, domains), with MITRE ATT&amp;CK technique references on every finding so you can look up exactly what a signal means.</p></div>
+    <div class="card"><h3>Canary tripwires</h3>
+      <p>Decoy files that nothing legitimate should ever touch. If something reads your fake <em>passwords.txt</em>, that behavior alone raises an alert — no signature needed, so it can catch implants no IOC list knows yet.</p></div>
+    <div class="card"><h3>Yours, locally</h3>
+      <p>Everything runs and stays on your machine: no cloud, no account, no upload, no telemetry. The report is a local HTML/JSON file. The optional Windows Defender deep-scan invokes the AV already on your system.</p></div>
+  </div>
+</section>
+
+<section>
+  <h2>Verify your download</h2>
+  <p style="color: var(--muted);">The v0.1.0 exe is not code-signed yet. Check the hash before running it:</p>
+  <pre>PS&gt; Get-FileHash SpyScan.exe -Algorithm SHA256
+
+a10f63d94348c61c1739e7c34db66319887e497a5071477d91e733dad06841f9  SpyScan.exe
+aa870f170cfba95625a4c727be7e6835cdefa01e96a7dda4a0602025bf3e8f20  SpyScan-v0.1.0-win64.zip</pre>
+  <p style="color: var(--muted); margin-top: 12px;">Prefer auditable? Clone the repo, <code>pip install -e .</code>, run <code>spyscan-app</code> (Python 3.13+).</p>
+</section>
+
+<section>
+  <div class="limits">
+    <h2>Honest limits</h2>
+    <p style="color: var(--muted);">A security tool that oversells its coverage is part of the problem. Read this before trusting a CLEAN verdict:</p>
+    <ul>
+      <li><strong>Autostart coverage is a subset</strong> of Windows' full auto-start surface. The built-in collector reads the core locations (Run keys, services, tasks, drivers); the fuller sweep — 63 populated locations vs the default build's 6 on the reference machine — requires installing Sysinternals <code>autorunsc</code> yourself, because its license forbids bundling it. The <a href="https://github.com/NAJEMWEHBE/spyscan#autostart-coverage-what-it-checks-and-what-it-does-not">README documents exactly what goes unchecked</a> (BootExecute, AppInit_DLLs, IFEO hijacks, credential providers, and more).</li>
+      <li><strong>A scanner on a compromised machine can be lied to.</strong> A sufficiently privileged rootkit can hide from any userland scanner. SpyScan raises the bar; it is not a forensic guarantee.</li>
+      <li><strong>Windows x64 only</strong>, desktop only. No phone or network-side coverage yet.</li>
+      <li><strong>0-click mercenary spyware is hard to catch</strong> for any endpoint tool. SpyScan focuses on the persistence and behavior most implants still need.</li>
+    </ul>
+  </div>
+</section>
+
+<footer>
+  <p>SpyScan · <a href="https://github.com/NAJEMWEHBE/spyscan">GitHub</a> ·
+     <a href="https://github.com/NAJEMWEHBE/spyscan/releases">Releases</a> ·
+     <a href="https://github.com/NAJEMWEHBE/spyscan/blob/master/LICENSE">MIT License</a></p>
+  <p style="margin-top: 8px;">Defensive security tool. Built to make you <strong>aware</strong>, not to spy.</p>
+</footer>
+
+</div>
+</body>
+</html>

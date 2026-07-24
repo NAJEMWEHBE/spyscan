@@ -1,0 +1,13 @@
+{
+  "_comment": "User allowlist for known-good software. KNOWN-BAD ALWAYS OVERRIDES: a Defender hit / known-implant hash / IOC procname re-scores normally even if a rule below matches, so you can never hide real malware here. Keep it TIGHT -- never allowlist a broad directory (e.g. all of AppData or Temp) or you blind the detector. Rule types: 'path_globs' = fnmatch over exe/image_path (case-insensitive, use \\\\ in JSON); 'signers' = case-insensitive substring of the Authenticode signer subject (e.g. your code-signing org); 'sha256' = exact file hash (also tested against md5); 'entity_keys' = exact namespaced key from a finding. Add your own software by appending to the matching array.",
+  "path_globs": [
+    "*\\.venv\\scripts\\*",
+    "*\\spy-detector\\.venv\\*",
+    "c:\\python314\\*",
+    "*\\appdata\\roaming\\uv\\python\\*",
+    "*\\appdata\\roaming\\uv\\tools\\*\\scripts\\*"
+  ],
+  "signers": [],
+  "sha256": [],
+  "entity_keys": []
+}

@@ -1,0 +1,12 @@
+# Disguised iOS implant daemon names (Pegasus-class). Source: Amnesty Forensic Methodology Report.
+bh
+roleaccountd
+roleaboutd
+stagingd
+msgacntd
+mptbd
+ckkeyrollfd
+fmld
+pcsd
+otpgrefd
+gatekeeperd

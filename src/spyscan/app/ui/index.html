@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>spyscan</title>
+  <link rel="stylesheet" href="/ui/app.css" />
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="head">
+      <div class="brand">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor"
+               stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2.5 4 6v5.5c0 4.7 3.2 8.4 8 9.9 4.8-1.5 8-5.2 8-9.9V6z" />
+            <circle cx="12" cy="11" r="2.6" />
+            <path d="M14 13.4 16.2 16" />
+          </svg>
+        </div>
+        <div class="brand-text">
+          <h1>spyscan</h1>
+          <p class="tagline">is anything spying on this device?</p>
+        </div>
+      </div>
+      <div class="badge" title="Runs entirely on this machine. No data ever leaves.">
+        <span class="dot"></span> local-only &middot; offline
+      </div>
+    </header>
+
+    <section class="hero card">
+      <div class="hero-main">
+        <button id="scanBtn" class="primary">
+          <span class="btn-label">Scan now</span>
+          <span class="spinner" hidden></span>
+        </button>
+        <p id="scanHint" class="hint">A full scan takes about 30&ndash;40 seconds.</p>
+        <label class="defender-opt hint">
+          <input type="checkbox" id="defenderToggle">
+          Deep-scan the most suspicious files with Windows Defender (slower)
+        </label>
+      </div>
+      <div id="verdict" class="verdict" hidden>
+        <div class="verdict-icon" id="verdictIcon"></div>
+        <div class="verdict-body">
+          <div class="verdict-title" id="verdictTitle"></div>
+          <div class="verdict-sub" id="verdictSub"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="card" id="findingsCard">
+      <div class="card-head">
+        <h2>Findings</h2>
+        <span class="muted" id="findingsMeta"></span>
+      </div>
+      <div class="table-scroll">
+        <table id="findingsTable">
+          <thead>
+            <tr>
+              <th>Risk</th><th>Entity</th><th>Source</th><th>Why</th><th>ATT&amp;CK</th>
+            </tr>
+          </thead>
+          <tbody id="findingsBody"></tbody>
+        </table>
+      </div>
+      <div id="emptyState" class="empty" hidden>
+        No high-risk findings. <span class="muted">(See the limits below &mdash; clean is not proof of clean.)</span>
+      </div>
+      <div class="report-row">
+        <button id="reportBtn" class="ghost" disabled>Open full HTML report</button>
+      </div>
+    </section>
+
+    <div class="grid2">
+      <section class="card">
+        <div class="card-head"><h2>Baseline</h2></div>
+        <p id="baselineStatus" class="muted">Checking&hellip;</p>
+        <button id="baselineBtn" class="ghost">Set baseline (trusted machine)</button>
+        <p class="caution">
+          Only do this on a machine you trust right now &mdash; it becomes the &ldquo;known-good&rdquo; snapshot scans compare against.
+        </p>
+      </section>
+
+      <section class="card">
+        <div class="card-head"><h2>Allowlist</h2></div>
+        <p id="allowlistStatus" class="muted">Checking&hellip;</p>
+        <p class="caution">
+          Edit <code id="allowlistPath">config/allowlist.json</code> to quiet your own trusted software.
+          <span class="muted">Known-bad signals always override it.</span>
+        </p>
+      </section>
+    </div>
+
+    <section class="card" id="canaryCard">
+      <div class="card-head">
+        <h2>Canary tripwires</h2>
+        <span class="muted" id="canaryMeta"></span>
+      </div>
+      <p class="muted" id="canaryStatus">Checking&hellip;</p>
+      <ul id="canaryList" class="canary-list" hidden></ul>
+      <div class="canary-actions">
+        <button id="canaryDeployBtn" class="ghost">Deploy decoys</button>
+        <button id="canaryClearBtn" class="ghost" disabled>Clear decoys</button>
+      </div>
+      <p class="caution">
+        Plants harmless decoy files (fake &ldquo;passwords.txt&rdquo;, &ldquo;crypto_wallet_seed.txt&rdquo;&hellip;) with believable bait.
+        If anything reads or modifies one, that is a strong spying signal &mdash; it shows up as an ALERT in the next scan.
+        <span class="muted">100% local: no web beacon, no callback. Clear them when done so no fake-secret files are left behind.</span>
+      </p>
+    </section>
+
+    <footer class="foot">
+      <strong>Honest limits.</strong> spyscan is a usermode awareness/triage tool &mdash; <em>not</em> a kernel EDR.
+      It can miss kernel-hidden or zero-click implants. A clean result is <em>not</em> proof the device is clean.
+      Everything runs locally; nothing leaves this machine.
+    </footer>
+
+  </div>
+  <script src="/ui/app.js"></script>
+</body>
+</html>

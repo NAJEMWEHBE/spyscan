@@ -1,0 +1,12 @@
+# Mercenary-spyware C2/exploit domains. Source: Amnesty/Citizen Lab/Google TAG/MSTIC.
+# DEFENSIVE detection only.
+free247downloads.com
+urlpush.net
+opposedarrangement.net
+documentpro.org
+sec-flare.com
+noc-service-streamer.com
+fbcdnads.live
+hilocake.info
+grayhornet.com
+johnshopkin.net
