@@ -110,7 +110,7 @@ The file lives at **`config/allowlist.json`** (shipped, edit in place). Run `spy
 | `sha256` | exact file hash (also tested against a fact's `md5`) |
 | `entity_keys` | exact namespaced finding key (e.g. `processes::name::exe`) |
 
-The shipped default seeds **only** your local dev interpreters (`.venv\Scripts`, the spy-detector venv, the `C:\Python314` install, uv-managed python + tools). Keep it **tight** — never allowlist a broad directory like all of `AppData` or `Temp`, or you blind the detector. `scan` prints `allowlisted: N` so you always see how many findings were quieted.
+The shipped default contains **one** rule: `*\.venv\scripts\*`, so running spyscan from source doesn't flag its own venv interpreter. Everything else — your Python installs, dev tools, vendor software — is yours to add; spyscan does not pre-quiet paths it can't know are yours. Keep it **tight** — never allowlist a broad directory like all of `AppData` or `Temp`, or you blind the detector. `scan` prints `allowlisted: N` so you always see how many findings were quieted.
 
 ---
 
