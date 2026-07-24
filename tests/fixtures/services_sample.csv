@@ -1,0 +1,3 @@
+"Name","DisplayName","PathName","StartMode","State","StartName","ServiceType"
+"ALG","Application Layer Gateway Service","C:\WINDOWS\System32\alg.exe","Manual","Stopped","NT AUTHORITY\LocalService","Own Process"
+"EvilSvc","Totally Legit Service","C:\Users\testuser\AppData\Local\Temp\svc.exe -hidden","Auto","Running","LocalSystem","Own Process"

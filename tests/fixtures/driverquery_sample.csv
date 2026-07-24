@@ -1,0 +1,3 @@
+"Module Name","Display Name","Description","Driver Type","Start Mode","State","Status","Accept Stop","Accept Pause","Paged Pool(bytes)","Code(bytes)","BSS(bytes)","Link Date","Path","Init(bytes)"
+"1394ohci","1394 OHCI Compliant Host Controller","1394 OHCI Compliant Host Controller","Kernel ","Manual","Stopped","OK","FALSE","FALSE","4,096","229,376","0","","C:\WINDOWS\system32\drivers\1394ohci.sys","4,096"
+"evilrk","Evil Rootkit","Evil Rootkit","Kernel ","Auto","Running","OK","TRUE","FALSE","0","81,920","0","5/19/2015 1:28:03 AM","C:\Users\testuser\AppData\Local\Temp\evilrk.sys","4,096"
