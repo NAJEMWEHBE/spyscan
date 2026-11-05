@@ -3,32 +3,58 @@
 
 A thin Flask layer over spyscan.service -- it does NO detection itself, it only
 exposes the reusable service (collect -> build_findings -> report) to the local
-UI. Bind it to 127.0.0.1 only (the launcher does this); there is no auth because
-it is single-user loopback, never a network service.
+UI. Bind it to 127.0.0.1 only (the launcher does this).
+
+Loopback is NOT a trust boundary: any web page the user visits can send requests
+to 127.0.0.1, and DNS rebinding lets it read the answers. So one ``before_request``
+guard (``_guard``) refuses every request that is not from the spyscan window:
+
+* Host must be a loopback name (127.0.0.1 / localhost / [::1]) -- kills rebinding.
+* Every route except /ui/* static assets needs the per-launch token: the launcher
+  opens ``/?t=<token>``; that sets a SameSite=Strict cookie and redirects to ``/``.
+  The launcher itself may send ``X-Spyscan-Token``; the report link may carry ``?t=``.
+* A request carrying an Origin must come from the same origin.
+* POSTs must be ``application/json`` (a CORS "simple request" can't send that
+  without a preflight, which this server never approves).
 """
 from __future__ import annotations
+import hmac
 import json
+import secrets
 from pathlib import Path
 
-from flask import Flask, jsonify, send_from_directory, abort, request
+from flask import Flask, jsonify, send_from_directory, abort, request, redirect
 
 from spyscan import service
 from spyscan import canary
-from spyscan.store import BaselineStore
+from spyscan.store import baseline_count
 from spyscan.allowlist import Allowlist
 from spyscan.resources import resource_dir
 
 # Frozen-aware: dev -> src/spyscan/app/ui; PyInstaller -> <_MEIPASS>/spyscan/app/ui.
 _UI_DIR = resource_dir("app", "ui")
 
+TOKEN_COOKIE = "spyscan_token"
+TOKEN_HEADER = "X-Spyscan-Token"
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "[::1]"})
+
+
+def _hostname(host: str) -> str:
+    """'127.0.0.1:5000' -> '127.0.0.1'; '[::1]:5000' -> '[::1]'."""
+    host = (host or "").strip().lower()
+    if host.startswith("["):
+        return host[:host.find("]") + 1] if "]" in host else host
+    return host.rsplit(":", 1)[0] if ":" in host else host
+
+
+def _same(a: str, b: str) -> bool:
+    return bool(a) and bool(b) and hmac.compare_digest(a.encode(), b.encode())
+
 
 def _baseline_count(db: Path) -> int | None:
-    """Return the number of baseline facts, or None if no baseline exists yet."""
-    try:
-        facts = BaselineStore(db).load_baseline()
-    except Exception:
-        return None
-    return len(facts) if facts else None
+    """Return the number of baseline facts, or None if no baseline exists yet.
+    Read-only: a status read never creates baseline.db (audit #17)."""
+    return baseline_count(db)
 
 
 def _last_scan_meta(root: Path) -> dict | None:
@@ -54,18 +80,47 @@ def _allowlist_info(root: Path) -> dict:
                        "entity_keys": len(al.entity_keys)}}
 
 
-def create_app(root: Path | None = None, db: Path | None = None) -> Flask:
+def create_app(root: Path | None = None, db: Path | None = None,
+               token: str | None = None) -> Flask:
     """App factory. `root`/`db` default to the service's repo-rooted paths so the
-    app scans the same surface the CLI does; tests pass tmp paths."""
+    app scans the same surface the CLI does; tests pass tmp paths. `token` is the
+    per-launch secret every request must prove (a fresh random one by default;
+    read it back from ``app.config["SPYSCAN_TOKEN"]``)."""
     root = Path(root) if root is not None else service.ROOT
     db = Path(db) if db is not None else root / "baseline.db"
+    token = token or secrets.token_urlsafe(32)
 
     app = Flask(__name__, static_folder=None)
     app.config["SPYSCAN_ROOT"] = root
     app.config["SPYSCAN_DB"] = db
+    app.config["SPYSCAN_TOKEN"] = token
+
+    @app.before_request
+    def _guard():
+        if _hostname(request.host) not in _LOOPBACK_HOSTS:
+            abort(403, "spyscan only answers on a loopback host name")
+        origin = request.headers.get("Origin")
+        if origin and origin.rstrip("/").lower() != request.host_url.rstrip("/").lower():
+            abort(403, "cross-origin request refused")
+        if request.path.startswith("/ui/"):
+            return None  # public static assets (css/js), no data
+        # any one valid proof is enough (a stale cookie from an earlier launch
+        # must not shadow a fresh ?t= handshake: cookies are not port-scoped)
+        presented = (request.cookies.get(TOKEN_COOKIE), request.headers.get(TOKEN_HEADER),
+                     request.args.get("t"))
+        if not any(_same(p or "", token) for p in presented):
+            abort(403, "missing or wrong spyscan session token")
+        if request.method == "POST" and not request.is_json:
+            abort(415, "POST bodies must be application/json")
+        return None
 
     @app.get("/")
     def index():
+        if request.args.get("t"):
+            # handshake: keep the token in a cookie, drop it from the URL/history
+            resp = redirect("/", code=303)
+            resp.set_cookie(TOKEN_COOKIE, token, samesite="Strict", path="/")
+            return resp
         return send_from_directory(_UI_DIR, "index.html")
 
     @app.get("/ui/<path:fname>")

@@ -29,7 +29,8 @@ Shape parity: facts are ``kind="autostart"`` with the same attrs autoruns emits,
 flow through the existing persistence/scoring rules unchanged.
 """
 from __future__ import annotations
-import csv, io, os, subprocess
+import csv, io, os
+from spyscan import powershell
 from spyscan.facts import Fact, make_key
 from spyscan.collectors.base import Collector, ScanContext, is_tempish
 from spyscan.collectors.autoruns import autorunsc_available
@@ -169,12 +170,13 @@ def _lnk_targets(paths: list[str]) -> dict[str, tuple[str, str]]:
     lnks = [p for p in paths if p.lower().endswith(".lnk")]
     if not lnks:
         return {}
-    lst = ",".join("'" + p.replace("'", "''") + "'" for p in lnks)
+    # The paths are attacker-named files: they go in as DATA, never as script text
+    # (audit #1 -- see spyscan.powershell for why escaping is not enough).
     out = _ps_csv(
         "$sh = New-Object -ComObject WScript.Shell; "
-        f"@({lst}) | ForEach-Object {{ $s = $sh.CreateShortcut($_); "
+        "@($data) | ForEach-Object { $s = $sh.CreateShortcut($_); "
         "[pscustomobject]@{Path=$_; Target=$s.TargetPath; Args=$s.Arguments} } | "
-        "ConvertTo-Csv -NoTypeInformation")
+        "ConvertTo-Csv -NoTypeInformation", data=lnks)
     m: dict[str, tuple[str, str]] = {}
     for row in _reader(out):
         p = (row.get("Path") or "").strip()
@@ -205,15 +207,10 @@ def _gather_startup() -> list[tuple]:
             for scope, folder, fn, fp in entries]
 
 
-def _ps_csv(ps_expr: str) -> bytes:
-    """Run a PowerShell pipeline ending in ConvertTo-Csv; bytes, empty on any failure."""
-    try:
-        out = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_expr],
-            capture_output=True, timeout=60)
-        return out.stdout
-    except Exception:
-        return b""
+def _ps_csv(ps_expr: str, data=None) -> bytes:
+    """Run a constant PowerShell pipeline ending in ConvertTo-Csv; ``data`` reaches it
+    as ``$data`` (JSON on stdin). Bytes, empty on any failure."""
+    return powershell.run(ps_expr, data)
 
 
 def _gather_wmi() -> dict:

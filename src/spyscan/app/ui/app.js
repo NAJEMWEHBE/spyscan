@@ -32,8 +32,14 @@ async function getJSON(url) {
   const r = await fetch(url);
   return r.json();
 }
+// The local server only answers JSON POSTs (a cross-site "simple request" can't
+// send application/json without a preflight it never approves).
 async function postJSON(url) {
-  const r = await fetch(url, { method: "POST" });
+  const r = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: "{}",
+  });
   return { ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) };
 }
 
@@ -256,7 +262,14 @@ async function doBaseline() {
 
 scanBtn.addEventListener("click", doScan);
 baselineBtn.addEventListener("click", doBaseline);
-reportBtn.addEventListener("click", () => window.open("/api/report", "_blank"));
+// The report may open outside this window (no session cookie there), so the
+// link carries the per-launch token the server set at the handshake.
+function sessionToken() {
+  const m = document.cookie.match(/(?:^|;\s*)spyscan_token=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : "";
+}
+reportBtn.addEventListener("click", () =>
+  window.open("/api/report?t=" + encodeURIComponent(sessionToken()), "_blank"));
 $("canaryDeployBtn").addEventListener("click", doCanaryDeploy);
 $("canaryClearBtn").addEventListener("click", doCanaryClear);
 
