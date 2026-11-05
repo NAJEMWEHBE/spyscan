@@ -2,6 +2,7 @@
 from __future__ import annotations
 from pathlib import Path
 from spyscan.facts import Fact, image_path_of
+from spyscan.collectors.base import exe_from_command
 from spyscan.finding import Finding
 from spyscan.diff import diff_facts
 from spyscan.score import score_fact, no_resolvable_parent
@@ -83,19 +84,27 @@ def _default_signer(path: str) -> dict:
 
 
 def _exe_path_for(f: Fact) -> str:
-    """Resolvable on-disk image path for a fact, or '' if none."""
+    """Resolvable on-disk image path for a fact, or '' if none.
+
+    Services and tasks hold a COMMAND LINE (PathName / Task To Run), so the
+    program is cut out of it first (audit #5)."""
+    if f.kind == "scheduled_task":
+        return exe_from_command(str(f.attrs.get("task_to_run") or ""))
+    if f.kind == "service":
+        return exe_from_command(image_path_of(f.attrs))
     return image_path_of(f.attrs)
 
 
 def _is_enrich_candidate(finding: "Finding") -> bool:
     """Cheap-signal heuristic: is this fact worth the slow per-file signer call?
 
-    A candidate is a process/autostart fact that already looks suspicious from
-    the cheap signals: score >= 3, OR runs from temp, OR no resolvable parent,
-    OR is a new fact that has a real exe path.
+    A candidate is a process or persistence fact (autostart, service, task,
+    driver -- audit #5) that already looks suspicious from the cheap signals:
+    score >= 3, OR runs from temp, OR no resolvable parent, OR is a new fact
+    that has a real exe path.
     """
     fact = finding.fact
-    if fact.kind not in ("process", "autostart"):
+    if fact.kind != "process" and fact.kind not in _PERSISTENCE_KINDS:
         return False
     a = fact.attrs
     if finding.score >= 3:

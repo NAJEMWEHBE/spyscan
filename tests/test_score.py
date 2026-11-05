@@ -103,7 +103,9 @@ def test_allowlisted_reason_defaults_when_missing():
 def test_is_new_alone_is_review_floor():
     f = Fact("autoruns", "autoruns::a::b", "autostart", "X", {"is_new": True})
     r = score_fact(f)
-    assert "+3 new since baseline" in r["reasons"]
+    # audit #5: a new persistence entry reaches REVIEW on its own
+    assert "+4 new persistence entry since baseline" in r["reasons"]
+    assert r["bucket"] == "REVIEW"
 
 
 def test_unsigned_branch():

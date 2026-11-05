@@ -52,6 +52,14 @@ def _is_benign_remote(remote_ip: str | None) -> bool:
     return False
 
 
+# Scoring policy per kind (audit #5). A NEW persistence entry -- something that
+# will run again at every boot/logon -- is how commercial monitoring software and
+# stalkerware install, so it reaches REVIEW on its own (4). Ephemeral kinds
+# (processes, connections) churn normally and keep the lighter +3.
+_PERSISTENCE_KINDS = frozenset({"autostart", "service", "scheduled_task", "driver"})
+_NEW_PERSISTENCE_WEIGHT = 4
+
+
 def no_resolvable_parent(f: Fact) -> bool:
     """True when a process entity has no resolvable parent at all.
 
@@ -99,7 +107,10 @@ def score_fact(f: Fact) -> dict:
                 "reasons": ["benign: loopback/link-local/no remote endpoint"]}
 
     if a.get("is_new"):
-        add(3, "new since baseline")
+        if f.kind in _PERSISTENCE_KINDS:
+            add(_NEW_PERSISTENCE_WEIGHT, "new persistence entry since baseline")
+        else:
+            add(3, "new since baseline")
     if a.get("signed") is False or a.get("verified") is False:
         add(2, "unsigned / unverified binary")
     if a.get("from_temp"):
