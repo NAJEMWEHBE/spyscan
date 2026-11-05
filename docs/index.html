@@ -90,7 +90,7 @@
     <div class="card"><h3>Known-spyware IOCs</h3>
       <p>Findings are matched against curated mercenary-spyware and stalkerware indicator lists (process names, domains), with MITRE ATT&amp;CK technique references on every finding so you can look up exactly what a signal means.</p></div>
     <div class="card"><h3>Canary tripwires</h3>
-      <p>Decoy files that nothing legitimate should ever touch. If something reads your fake <em>passwords.txt</em>, that behavior alone raises an alert — no signature needed, so it can catch implants no IOC list knows yet.</p></div>
+      <p>Decoy files that nothing legitimate should ever touch. If one is changed, moved or deleted, that alone raises an alert. Turn on Windows access auditing once with <code>spyscan canary audit-setup</code> (as admin), and a program that only reads or copies your fake <em>passwords.txt</em> raises an alert too, naming the program. No signature needed, so it can catch implants no IOC list knows yet.</p></div>
     <div class="card"><h3>Yours, locally</h3>
       <p>Everything runs and stays on your machine: no cloud, no account, no upload, no telemetry. The report is a local HTML/JSON file. The optional Windows Defender deep-scan invokes the AV already on your system.</p></div>
   </div>

@@ -187,13 +187,28 @@ def create_app(root: Path | None = None, db: Path | None = None,
     @app.get("/api/canary/status")
     def api_canary_status():
         import time
-        trips = canary.check(service.canary_state_path(root), now=time.time())
+        from spyscan.collectors import canary as canary_collector
+        # same rows as the scan: a decoy that was only READ shows as tripped too
+        trips = canary_collector.gather(service.canary_state_path(root), now=time.time())
         deployed = bool(trips)
         tripped = sum(1 for t in trips if t["tripped"])
         canaries = [{"path": t["path"], "tripped": t["tripped"],
-                     "reasons": t["reasons"]} for t in trips]
+                     "reasons": t["reasons"],
+                     "accessed_by": sorted({e.get("process_name", "")
+                                            for e in t.get("audit", [])
+                                            if e.get("process_name")})}
+                    for t in trips]
         return jsonify({"deployed": deployed, "tripped": tripped,
                         "canaries": canaries})
+
+    @app.get("/api/canary/audit-setup")
+    def api_canary_audit_setup():
+        # the elevated commands that let a scan see a decoy being READ (#9).
+        # Text only: nothing is run or elevated from here.
+        from spyscan import canary_audit
+        paths = canary.tracked_paths(service.canary_state_path(root))
+        return jsonify({"deployed": bool(paths),
+                        "commands": canary_audit.enable_audit_commands(paths) if paths else ""})
 
     @app.post("/api/canary/clear")
     def api_canary_clear():

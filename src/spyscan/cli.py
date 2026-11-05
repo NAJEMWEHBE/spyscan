@@ -73,7 +73,9 @@ def cmd_canary(args):
         return 0
 
     if args.canary_cmd == "status":
-        trips = canary.check(state, now=time.time())
+        from spyscan.collectors import canary as canary_collector
+        # same rows as the scan: a decoy that was only READ shows as tripped too
+        trips = canary_collector.gather(state, now=time.time())
         if not trips:
             print("no canaries deployed - run: spyscan canary deploy")
             return 0
@@ -85,8 +87,22 @@ def cmd_canary(args):
             if t["tripped"]:
                 for r in t["reasons"]:
                     print(f"      - {r}")
+                who = sorted({e.get("process_name", "") for e in t.get("audit", [])
+                              if e.get("process_name")})
+                if who:
+                    print("      accessed by: " + ", ".join(who))
         # non-zero exit signals a trip (like scan's ALERT) for scripting
         return 1 if tripped else 0
+
+    if args.canary_cmd == "audit-setup":
+        # PRINTS the elevated commands; never runs or elevates anything (#9)
+        from spyscan import canary_audit
+        paths = canary.tracked_paths(state)
+        if not paths:
+            print("no canaries deployed - run: spyscan canary deploy first")
+            return 1
+        print(canary_audit.enable_audit_commands(paths))
+        return 0
 
     if args.canary_cmd == "clear":
         res = canary.clear(state)
@@ -125,6 +141,9 @@ def main(argv=None):
                             help="plant only into this dir (default: "
                                  "Desktop + Documents + app canaries/)")
     can_sub.add_parser("status", help="list canaries + whether any tripped")
+    can_sub.add_parser("audit-setup",
+                       help="print the admin commands that let a scan see a decoy "
+                            "being READ (prints only, never runs them)")
     can_sub.add_parser("clear", help="remove decoy files + state")
 
     args = p.parse_args(argv)
