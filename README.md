@@ -30,6 +30,17 @@ Buckets: **ALERT ≥8 · REVIEW 4–7 · INFO <4.** Microsoft-signed is allowlis
 
 ---
 
+## If you think someone is watching you
+
+Your safety matters more than any scan result. Software that watches you can also show the person behind it that you scanned, searched for help, or removed something, and removing it can make things more dangerous.
+
+- **Document first, remove later.** Keep the report (`runs\last_scan.html` and `.json`), take photos of what you find, and note the dates. Do not delete anything until you have a plan.
+- **Plan from a device they have never had access to**, such as a trusted friend's phone or a library computer.
+- **Get help.** The [Coalition Against Stalkerware](https://stopstalkerware.org/) lists support organisations by country. For example: in the US, the National Domestic Violence Hotline (1-800-799-7233); in the UK, the National Domestic Abuse Helpline (0808 2000 247). In danger, call your local emergency number.
+- **spyscan leaves traces.** It never removes anything, but its folder, its report and any decoy files can be seen by someone who uses this PC. `spyscan canary clear` removes the decoys.
+
+---
+
 ## Quick start
 
 ### Option A — packaged app (no Python needed)

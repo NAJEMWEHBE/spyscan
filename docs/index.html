@@ -97,6 +97,19 @@
 </section>
 
 <section>
+  <div class="limits">
+    <h2>If you think someone is watching you</h2>
+    <p style="color: var(--muted);">Your safety matters more than any scan result. Software that watches you can also show the person behind it that you scanned, searched for help, or removed something, and removing it can make things more dangerous.</p>
+    <ul>
+      <li><strong>Document first, remove later.</strong> Keep the report (<code>runs\last_scan.html</code> and <code>.json</code>), take photos of what you find, and note the dates. Do not delete anything until you have a plan.</li>
+      <li><strong>Plan from a device they have never had access to</strong>, such as a trusted friend's phone or a library computer.</li>
+      <li><strong>Get help.</strong> The <a href="https://stopstalkerware.org/">Coalition Against Stalkerware</a> lists support organisations by country. For example: in the US, the National Domestic Violence Hotline (1-800-799-7233); in the UK, the National Domestic Abuse Helpline (0808 2000 247). In danger, call your local emergency number.</li>
+      <li><strong>SpyScan leaves traces.</strong> It never removes anything, but its folder, its report and any decoy files can be seen by someone who uses this PC. <code>spyscan canary clear</code> removes the decoys.</li>
+    </ul>
+  </div>
+</section>
+
+<section>
   <h2>Verify your download</h2>
   <p style="color: var(--muted);">The v0.1.0 exe is not code-signed yet. Check the hash before running it:</p>
   <pre>PS&gt; Get-FileHash SpyScan.exe -Algorithm SHA256
