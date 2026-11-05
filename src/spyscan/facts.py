@@ -12,6 +12,23 @@ def make_key(collector: str, *parts: str) -> str:
     """
     return collector + "::" + "::".join(p.strip() for p in parts)
 
+# The attrs a collector may use for "the on-disk program this fact is about".
+# Collectors spell it differently (processes: exe; autostarts: image_path;
+# services/drivers: path), so EVERY reader goes through image_path_of -- two
+# private copies of this list drifted apart once and no autostart was ever
+# signature-checked (audit #2).
+IMAGE_PATH_ATTRS = ("image_path", "exe", "image", "path")
+
+
+def image_path_of(attrs: dict) -> str:
+    """The fact's on-disk image path ('' if none), whichever attr holds it."""
+    for key in IMAGE_PATH_ATTRS:
+        val = str(attrs.get(key) or "").strip()
+        if val:
+            return val
+    return ""
+
+
 @dataclass(frozen=True)
 class Fact:
     """One real-world persistence/activity entity, exactly one Fact per scan.
