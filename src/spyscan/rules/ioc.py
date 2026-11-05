@@ -27,8 +27,12 @@ class IOCMatcher:
     def from_dir(cls, d: Path) -> "IOCMatcher":
         def load(name):
             f = d / name
-            return {l.strip().lower() for l in f.read_text().splitlines()
-                    if l.strip() and not l.startswith("#")} if f.exists() else set()
+            if not f.exists():
+                return set()
+            # UTF-8 (BOM tolerated), and strip BEFORE the comment test so an
+            # indented '  # note' is a comment, not an IOC entry
+            lines = (l.strip() for l in f.read_text(encoding="utf-8-sig").splitlines())
+            return {l.lower() for l in lines if l and not l.startswith("#")}
         return cls(load("mercenary_domains.txt"), load("mercenary_procnames.txt"))
 
     def match_domain(self, host: str) -> bool:
