@@ -212,6 +212,9 @@ def build_findings(baseline: list[Fact], current: list[Fact],
         path = _exe_path_for(fd.fact)
         if not path:
             continue
+        # %windir%\... and bare 'rundll32.exe' -> the real file, so the hash and
+        # Defender see the same file the signer does (audit #10)
+        path = _signature.resolve_image(path) or path
         a = fd.fact.attrs
         try:
             sig = signer(path)
