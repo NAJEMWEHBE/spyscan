@@ -21,12 +21,12 @@ Snapshots a known-good machine, then on later scans flags what is **NEW / suspic
 | `drivers` | loaded kernel drivers | T1014 |
 | `canary` | honeyfile decoys that were changed, moved or deleted, or **read** once access auditing is on (+8 → ALERT, never silenced; see [Canary tripwires](#canary-tripwires-decoy-files)) | T1530 |
 
-Three detection engines feed **one 0–100 score** per entity:
+Three detection engines add points to **one score** per entity (each signal adds a fixed number of points; there is no cap):
 1. **baseline-diff** — what changed since your clean snapshot,
 2. **signature/IOC** — known mercenary-spyware domains (matched against the Windows DNS cache: a connection to an IP resolved from a listed domain, or a cached lookup of one) + implant daemon names (Pegasus/Predator/Candiru, cited from Amnesty/Citizen Lab; most target phones, so on Windows they rarely fire), Authenticode signing, Windows Defender second-opinion,
-3. **behavioral** — temp-path / unsigned / no-parent / beaconing / live cam-mic.
+3. **behavioral** — temp-path / unsigned / no-parent / hidden-window or encoded PowerShell / live cam-mic / tripped decoys.
 
-Buckets: **ALERT ≥8 · REVIEW 4–7 · INFO <4.** Microsoft-signed is allowlisted to INFO — **unless** a known-bad signal (Defender hit / IOC name) is present, which always overrides the allowlist (no signed-malware bypass). Loopback/ephemeral connections are floored to benign so the report doesn't drown in churn.
+Buckets: **ALERT ≥8 · REVIEW 4–7 · INFO <4.** A verified Microsoft signature floors a finding to INFO, with three exceptions: the signer must be Microsoft's own (not the *Hardware Compatibility Publisher* that signs third-party drivers); the entry must run only itself (a script host such as PowerShell, cmd or rundll32 given arguments, or a launch string reaching into temp/AppData, is not floored); and a known-bad signal (Defender hit / IOC name / tripped decoy) always overrides the floor (no signed-malware bypass). A new persistence entry (autostart, service, task, driver) scores +4, so it reaches REVIEW on its own; a new process or connection scores +3. Loopback/ephemeral connections are floored to benign so the report doesn't drown in churn.
 
 ---
 
@@ -122,7 +122,7 @@ The window opens via a native [pywebview](https://pywebview.flowrt.dev/) WebView
 
 The packaged app keeps its writable state (`baseline.db`, `runs\`) **next to the executable**, while the bundled read-only resources are served from inside the build. The local server binds `127.0.0.1` only; set `SPYSCAN_PORT` to pin a fixed port (otherwise a free one is chosen and written to `spyscan_url.txt` next to the exe).
 
-**Reading results:** ALERT = look now. REVIEW = worth a glance. A finding shows *why* it scored (e.g. `+3 new since baseline, +2 unsigned, +3 runs from temp`). You decide — the tool surfaces, it does not convict. Build an allowlist for your known-good software to quiet recurring benign hits (e.g. your own dev interpreters).
+**Reading results:** ALERT = look now. REVIEW = worth a glance. A finding shows *why* it scored (e.g. `+4 new persistence entry since baseline, +2 unsigned / unverified binary, +3 runs from temp/appdata`). You decide — the tool surfaces, it does not convict. Build an allowlist for your known-good software to quiet recurring benign hits (e.g. your own dev interpreters).
 
 ### Canary tripwires (decoy files)
 
@@ -228,7 +228,7 @@ expect those to appear from two sources.
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python -m pytest -q   # 263 passing
+.\.venv\Scripts\python -m pytest -q   # integration tests (real OS) are skipped by default
 ```
 Pure logic (schema, diff, score, parsers) is fixture-unit-tested; OS-touching collectors are integration-marked.
 
