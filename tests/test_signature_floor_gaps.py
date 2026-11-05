@@ -44,7 +44,7 @@ def test_native_autostart_is_signature_checked_and_unsigned_appdata_run_key_aler
               "from_temp": True, "verified": None, "signed": None})
     fd, calls = _finding(f, UNSIGNED)
     assert calls == [img]
-    assert fd.bucket == "ALERT" and fd.score == 8
+    assert fd.bucket == "ALERT" and fd.score == 9      # +4 new persistence, +3 temp, +2 unsigned
 
 
 # --- #4: what the entry runs ----------------------------------------------------

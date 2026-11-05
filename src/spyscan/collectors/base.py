@@ -17,6 +17,29 @@ def is_tempish(path: str) -> bool:
     return any(t in low for t in _TEMPISH)
 
 
+def exe_from_command(cmd: str) -> str:
+    """Best-effort image path out of a launch command (Run value, service
+    PathName, task action).
+
+    ``"C:\\Program Files\\App\\a.exe" -x`` -> ``C:\\Program Files\\App\\a.exe``
+    ``C:\\Windows\\system32\\userinit.exe,`` -> ``C:\\Windows\\system32\\userinit.exe``
+    ``rundll32.exe foo,Bar``                 -> ``rundll32.exe``
+    Returns "" for an empty command. Never raises.
+    """
+    c = (cmd or "").strip()
+    if not c:
+        return ""
+    if c[0] == '"':
+        end = c.find('"', 1)
+        return c[1:end] if end > 0 else c[1:]
+    low = c.lower()
+    idx = low.find(".exe")
+    if idx != -1:
+        return c[:idx + 4]
+    parts = c.split()
+    return parts[0] if parts else c
+
+
 @dataclass(frozen=True)
 class ScanContext:
     """Per-scan config threaded into every collector's collect()/gather().
