@@ -112,6 +112,8 @@ Same engine, in a native window — no terminal needed.
 
 A one-file build is also supported (`$env:SPYSCAN_ONEFILE=1; .\.venv\Scripts\pyinstaller spyscan.spec --noconfirm` → `dist\SpyScan.exe`); the one-folder build starts faster and is the recommended ship.
 
+**Releases** are built by `.github/workflows/release.yml` on GitHub's Windows runner, from the tagged commit only (pushing a tag like `v0.1.1` that matches `pyproject.toml`). It runs the tests, builds both forms, checks the bundled allowlist is the repo's, writes `SHA256SUMS`, records signed build provenance, and opens a **draft** release for a maintainer to publish. To check a download came from that workflow: `gh attestation verify SpyScan.exe --repo NAJEMWEHBE/spyscan`.
+
 The window opens via a native [pywebview](https://pywebview.flowrt.dev/) WebView2 frame (it falls back to your default browser if that runtime is missing). It shows:
 
 - a **Scan now** button and a **Set baseline (trusted machine)** button,
