@@ -9,6 +9,14 @@ from spyscan.facts import Fact
 from spyscan.finding import Finding
 
 
+def _client(app):
+    """A test client that is the spyscan window: it carries the session token
+    (the local-API guard is covered in test_app_local_api_guard.py)."""
+    c = app.test_client()
+    c.environ_base["HTTP_X_SPYSCAN_TOKEN"] = app.config["SPYSCAN_TOKEN"]
+    return c
+
+
 def _fake_finding(bucket, score, label):
     return Finding(fact=Fact("processes", f"processes::{label}::{label}",
                              "process", label, {}),
@@ -19,7 +27,7 @@ def _fake_finding(bucket, score, label):
 def client(tmp_path):
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
     app.config.update(TESTING=True)
-    return app.test_client()
+    return _client(app)
 
 
 def test_index_serves_html(client):
@@ -49,7 +57,7 @@ def test_status_reports_baseline(tmp_path, monkeypatch):
         [Fact("processes", f"processes::{i}::{i}", "process", str(i), {})
          for i in range(3)])
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
-    c = app.test_client()
+    c = _client(app)
     d = c.get("/api/status").get_json()
     assert d["baseline_exists"] is True
     assert d["baseline_count"] == 3
@@ -59,7 +67,7 @@ def test_baseline_endpoint(tmp_path, monkeypatch):
     monkeypatch.setattr(server.service, "run_baseline",
                         lambda root, db: 7)
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
-    r = app.test_client().post("/api/baseline")
+    r = _client(app).post("/api/baseline", json={})
     assert r.status_code == 200
     assert r.get_json() == {"ok": True, "count": 7}
 
@@ -82,7 +90,7 @@ def test_scan_returns_summary_and_only_alert_review(tmp_path, monkeypatch):
     monkeypatch.setattr(server.service, "run_scan",
                         lambda root, db, **k: fake_result)
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
-    r = app.test_client().post("/api/scan")
+    r = _client(app).post("/api/scan", json={})
     assert r.status_code == 200
     d = r.get_json()
     assert d["ok"] is True
@@ -100,7 +108,7 @@ def test_scan_without_baseline_returns_409(tmp_path, monkeypatch):
         raise RuntimeError("no baseline yet")
     monkeypatch.setattr(server.service, "run_scan", boom)
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
-    r = app.test_client().post("/api/scan")
+    r = _client(app).post("/api/scan", json={})
     assert r.status_code == 409
     assert r.get_json()["ok"] is False
 
@@ -118,10 +126,10 @@ def test_scan_defender_query_param_threads_enable_defender(tmp_path, monkeypatch
     monkeypatch.setattr(server.service, "run_scan", fake)
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
 
-    app.test_client().post("/api/scan?defender=1")
+    _client(app).post("/api/scan?defender=1", json={})
     assert captured.get("enable_defender") is True
 
-    app.test_client().post("/api/scan")
+    _client(app).post("/api/scan", json={})
     assert captured.get("enable_defender") is False
 
 
@@ -134,7 +142,7 @@ def test_report_served_after_scan(tmp_path):
     runs.mkdir()
     (runs / "last_scan.html").write_text("<h1>spyscan report</h1>", encoding="utf-8")
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
-    r = app.test_client().get("/api/report")
+    r = _client(app).get("/api/report")
     assert r.status_code == 200
     assert b"spyscan report" in r.data
 
@@ -145,7 +153,7 @@ def test_allowlist_endpoint(tmp_path):
     (cfg / "allowlist.json").write_text(
         json.dumps({"path_globs": ["a", "b"], "signers": ["x"]}), encoding="utf-8")
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
-    d = app.test_client().get("/api/allowlist").get_json()
+    d = _client(app).get("/api/allowlist").get_json()
     assert d["counts"]["path_globs"] == 2
     assert d["counts"]["signers"] == 1
     # ADR 0001: the built-in verified Microsoft-signed floor is surfaced too
@@ -173,10 +181,10 @@ def test_canary_deploy_status_clear_roundtrip(tmp_path, monkeypatch):
     monkeypatch.setattr(server.canary, "deploy", deploy_into)
 
     app = server.create_app(root=tmp_path, db=tmp_path / "b.db")
-    c = app.test_client()
+    c = _client(app)
 
     # deploy
-    r = c.post("/api/canary/deploy")
+    r = c.post("/api/canary/deploy", json={})
     assert r.status_code == 200
     d = r.get_json()
     assert d["ok"] is True and d["planted"] >= 1
@@ -201,7 +209,7 @@ def test_canary_deploy_status_clear_roundtrip(tmp_path, monkeypatch):
     assert any(cn["tripped"] for cn in d["canaries"])
 
     # clear: files + state gone
-    r = c.post("/api/canary/clear")
+    r = c.post("/api/canary/clear", json={})
     assert r.status_code == 200
     assert r.get_json()["ok"] is True
     assert not state.exists()

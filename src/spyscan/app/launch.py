@@ -54,28 +54,41 @@ def start_server(port: int | None = None, log=print) -> tuple[str, "WSGIServer",
     """Start the Flask app on 127.0.0.1:<port> in a daemon thread.
 
     Returns (url, httpd, thread). Bind is localhost-only -- never 0.0.0.0.
+    ``url`` carries this launch's random session token (``/?t=<token>``): the
+    window opening it is the only client the server answers (see server._guard).
 
     Port precedence: explicit arg > SPYSCAN_PORT env (test/debug fixed bind) >
     an OS-assigned free port.
     """
     port = port or _env_port() or _free_port()
     app = create_app()
+    token = app.config["SPYSCAN_TOKEN"]
     httpd = make_server(HOST, port, app, server_class=_ThreadingWSGIServer)
     t = threading.Thread(target=httpd.serve_forever, name="spyscan-server", daemon=True)
     t.start()
-    url = f"http://{HOST}:{port}/"
-    log(f"[spyscan] local server on {url}")
+    url = f"http://{HOST}:{port}/?t={token}"
+    log(f"[spyscan] local server on http://{HOST}:{port}/")
     return url, httpd, t
+
+
+def _split_token(url: str) -> tuple[str, str]:
+    """'http://h:p/?t=TOKEN' -> ('http://h:p', 'TOKEN')."""
+    from urllib.parse import parse_qs, urlsplit
+    parts = urlsplit(url)
+    token = (parse_qs(parts.query).get("t") or [""])[0]
+    return f"{parts.scheme}://{parts.netloc}", token
 
 
 def _wait_until_up(url: str, timeout: float = 5.0) -> bool:
     """Poll the server until it answers, so we don't open a window too early."""
     import urllib.request
     deadline = time.time() + timeout
-    status_url = url.rstrip("/") + "/api/status"
+    base, token = _split_token(url)
+    req = urllib.request.Request(base + "/api/status",
+                                 headers={"X-Spyscan-Token": token})
     while time.time() < deadline:
         try:
-            with urllib.request.urlopen(status_url, timeout=1) as r:
+            with urllib.request.urlopen(req, timeout=1) as r:
                 if r.status == 200:
                     return True
         except Exception:
@@ -112,7 +125,9 @@ def open_window(url: str, log=print) -> str:
 
 def _write_url_file(url: str) -> None:
     """Record the chosen URL next to the exe / project root so an external caller
-    (e.g. a smoke test of the frozen build) can discover the free port. Best
+    (e.g. a smoke test of the frozen build) can discover the free port. The URL
+    holds this launch's session token: a local file only the user's own processes
+    can read (web pages cannot), and the token dies with the process. Best
     effort -- never blocks startup if the dir is read-only."""
     try:
         from spyscan.resources import app_base

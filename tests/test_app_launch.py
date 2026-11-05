@@ -1,7 +1,15 @@
 # tests/test_app_launch.py
+import urllib.error
 import urllib.request
+from urllib.parse import parse_qs, urlsplit
+
+import pytest
 
 from spyscan.app import launch
+
+
+def _base(url: str) -> str:
+    return url.split("?", 1)[0].rstrip("/")
 
 
 def test_start_server_serves_status_on_localhost():
@@ -9,10 +17,24 @@ def test_start_server_serves_status_on_localhost():
     try:
         assert url.startswith("http://127.0.0.1:")
         assert launch._wait_until_up(url, timeout=5.0)
-        with urllib.request.urlopen(url.rstrip("/") + "/api/status", timeout=2) as r:
+        token = parse_qs(urlsplit(url).query)["t"][0]
+        req = urllib.request.Request(_base(url) + "/api/status",
+                                     headers={"X-Spyscan-Token": token})
+        with urllib.request.urlopen(req, timeout=2) as r:
             assert r.status == 200
             body = r.read()
         assert b"baseline_exists" in body
+    finally:
+        httpd.shutdown()
+
+
+def test_started_server_refuses_requests_without_the_launch_token():
+    url, httpd, t = launch.start_server(log=lambda *a: None)
+    try:
+        assert len(parse_qs(urlsplit(url).query)["t"][0]) >= 32
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(_base(url) + "/api/status", timeout=2)
+        assert e.value.code == 403
     finally:
         httpd.shutdown()
 
@@ -32,7 +54,7 @@ def test_start_server_honors_env_port(monkeypatch):
     monkeypatch.setenv("SPYSCAN_PORT", "8771")
     url, httpd, t = launch.start_server(log=lambda *a: None)
     try:
-        assert url == "http://127.0.0.1:8771/"
+        assert url.startswith("http://127.0.0.1:8771/?t=")
     finally:
         httpd.shutdown()
 
