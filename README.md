@@ -109,12 +109,12 @@ The file lives at **`config/allowlist.json`** (shipped, edit in place). Run `spy
 
 | Rule | Matches |
 |---|---|
-| `path_globs` | `fnmatch` over a finding's exe / image path, case-insensitive (use `\\` in JSON, e.g. `"*\\.venv\\scripts\\*"`) |
+| `path_globs` | `fnmatch` over a finding's exe / image path, case-insensitive (use `\\` in JSON, e.g. `"c:\\tools\\myapp\\*"`) |
 | `signers` | case-insensitive **substring** of the Authenticode signer subject (e.g. your code-signing org) |
 | `sha256` | exact file hash (also tested against a fact's `md5`) |
 | `entity_keys` | exact namespaced finding key (e.g. `processes::name::exe`) |
 
-The shipped default contains **one** rule: `*\.venv\scripts\*`, so running spyscan from source doesn't flag its own venv interpreter. Everything else — your Python installs, dev tools, vendor software — is yours to add; spyscan does not pre-quiet paths it can't know are yours. Keep it **tight** — never allowlist a broad directory like all of `AppData` or `Temp`, or you blind the detector. `scan` prints `allowlisted: N` so you always see how many findings were quieted.
+The shipped default is **empty**: a default rule applies on every user's PC, and a broad one becomes a hiding place. When you run spyscan from source inside a venv, it quiets only that venv's own `Scripts` folder, matched by absolute path at run time. Everything else — your Python installs, dev tools, vendor software — is yours to add; spyscan does not pre-quiet paths it can't know are yours. Keep it **tight** — never allowlist a broad directory like all of `AppData` or `Temp`, or you blind the detector. `scan` prints `allowlisted: N` so you always see how many findings were quieted.
 
 ---
 

@@ -10,7 +10,9 @@ Paths (DB, indicators, allowlist, runs/) are all resolved from a `root`
 argument so tests can repoint them via tmp_path, exactly like the CLI tests do.
 """
 from __future__ import annotations
+import glob
 import socket
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -68,6 +70,21 @@ def allowlist_path(root: Path | None = None) -> Path:
         external = app_base() / "config" / "allowlist.json"
         return external if external.exists() else bundle_dir("config", "allowlist.json")
     return _root(root) / "config" / "allowlist.json"
+
+
+def dev_self_globs() -> list[str]:
+    """Allowlist globs for spyscan's OWN interpreter when run from source in a venv.
+
+    The shipped allowlist is empty (audit #7: a generic ``*\\.venv\\scripts\\*``
+    floored an implant hidden in any folder named .venv). Running from source,
+    the only thing worth quieting is the venv this very process runs from, so it
+    is matched by absolute path, computed here at run time. Frozen builds and
+    non-venv interpreters get nothing.
+    """
+    if is_frozen() or sys.prefix == sys.base_prefix:
+        return []
+    scripts = str(Path(sys.prefix) / "Scripts").lower()
+    return [glob.escape(scripts) + "\\*"]
 
 
 def runs_dir(root: Path | None = None) -> Path:
@@ -175,6 +192,7 @@ def run_scan(root: Path | None = None, db: Path | None = None, *,
     # it in score_fact, so it can never hide real malware.
     allowlist = Allowlist.load(
         allowlist_file if allowlist_file is not None else allowlist_path(root))
+    allowlist.path_globs.extend(dev_self_globs())
     # Defender is a heavy, opt-in per-file second opinion (off by default). When
     # enabled, pass its on-demand single-file scanner; build_findings caps how many
     # of the most-suspicious files it actually scans (defender_max).
