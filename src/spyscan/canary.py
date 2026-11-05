@@ -26,6 +26,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import random
 from pathlib import Path
 
 from spyscan.resources import app_base
@@ -41,33 +42,73 @@ ATIME_NOTE = ("atime (last-access) is unreliable on Windows: NTFS last-access "
               "rely on hash/mtime/size/missing")
 _ATIME_TOLERANCE_S = 2.0
 
-# Default tempting decoy names + believable-but-fake bait. Order matters: deploy
-# walks this list and plants the first names that don't collide with real files.
-_DEFAULT_BAIT = {
-    "passwords.txt": (
-        "# personal logins (do not share)\n"
-        "email     najm / Sup3r!Winter_2026\n"
-        "bank      portal.kwbank / kw#3382aaQ\n"
-        "router    admin / admin8821\n"
-    ),
-    "crypto_wallet_seed.txt": (
-        "BIP39 recovery phrase - KEEP OFFLINE\n"
-        "ridge napkin oyster cabin velvet pioneer\n"
-        "tonic ladder gospel quantum meadow shrimp\n"
-    ),
-    "company_payroll_2026.xlsx": (
-        "Employee,Role,Salary_KWD,IBAN\n"
-        "N. Wehbe,Creative Director,2950,KW81HDMB0000000000113382\n"
-        "A. Saleh,Editor,1400,KW81HDMB0000000000119904\n"
-    ),
-    "vpn_credentials.txt": (
-        "[corp-vpn]\n"
-        "server = vpn.hdmedia.internal:1194\n"
-        "user   = nwehbe\n"
-        "pass   = Tr@nsit_Gate_77\n"
-        "psk    = 0f9a2c4e7b1d8835\n"
-    ),
+# Decoy bait: generic and RANDOM per deploy (audit #15). Fixed names and bytes
+# would let an implant recognise spyscan's decoys and skip them, and bait in a
+# public repo must hold no personal-looking data, so every value below is
+# generated: no real names, domains only under the reserved .example TLD
+# (RFC 2606), account numbers in no real bank format.
+_NAME_POOLS = {
+    "credentials": ("passwords.txt", "logins.txt", "my_passwords.txt",
+                    "accounts.txt", "passwords_backup.txt"),
+    "seed": ("crypto_wallet_seed.txt", "wallet_recovery.txt", "seed_phrase.txt",
+             "wallet_backup.txt"),
+    "payroll": ("payroll.csv", "salaries.csv", "staff_salaries.csv", "payroll_export.csv"),
+    "vpn": ("vpn_credentials.txt", "vpn_login.txt", "remote_access.txt", "vpn_config.txt"),
 }
+_KIND_HINTS = (("seed", "seed"), ("wallet", "seed"), ("recovery", "seed"),
+               ("payroll", "payroll"), ("salar", "payroll"),
+               ("vpn", "vpn"), ("remote", "vpn"),
+               ("pass", "credentials"), ("login", "credentials"), ("account", "credentials"))
+_WORDS = ("ridge", "napkin", "oyster", "cabin", "velvet", "pioneer", "tonic", "ladder",
+          "gospel", "quantum", "meadow", "shrimp", "harbor", "pencil", "orbit", "lemon",
+          "canvas", "timber", "falcon", "marble", "violet", "summit", "rocket", "pepper")
+_SURNAMES = ("Smith", "Garcia", "Chen", "Khan", "Silva", "Novak", "Haddad", "Okafor",
+             "Larsen", "Moreau", "Rossi", "Tanaka")
+_ROLES = ("Manager", "Editor", "Designer", "Accountant", "Engineer", "Coordinator")
+
+
+def _rand_pass(rng: random.Random) -> str:
+    return (rng.choice(_WORDS).capitalize() + rng.choice("!#@$%&")
+            + rng.choice(_WORDS) + str(rng.randint(10, 99)))
+
+
+def _rand_user(rng: random.Random) -> str:
+    return rng.choice(_WORDS) + str(rng.randint(100, 999))
+
+
+def _bait_for(kind: str, rng: random.Random) -> str:
+    """Believable-but-fake, randomised content for one decoy kind."""
+    if kind == "credentials":
+        return ("# logins (do not share)\n"
+                f"email     {_rand_user(rng)}@mail.example / {_rand_pass(rng)}\n"
+                f"bank      {_rand_user(rng)} / {_rand_pass(rng)}\n"
+                f"router    admin / {_rand_pass(rng)}\n")
+    if kind == "seed":
+        words = [rng.choice(_WORDS) for _ in range(12)]
+        return ("recovery phrase - KEEP OFFLINE\n"
+                + " ".join(words[:6]) + "\n" + " ".join(words[6:]) + "\n")
+    if kind == "payroll":
+        rows = [f"{rng.choice('ABCDEFGHJKLMNPRSTW')}. {rng.choice(_SURNAMES)},"
+                f"{rng.choice(_ROLES)},{rng.randint(900, 4200)},"
+                f"ACCT-{rng.randint(10**7, 10**8 - 1)}" for _ in range(rng.randint(2, 4))]
+        return "Employee,Role,Monthly,Account\n" + "\n".join(rows) + "\n"
+    if kind == "vpn":
+        return ("[vpn]\n"
+                f"server = vpn.{rng.choice(_WORDS)}.example:{rng.choice((443, 1194, 51820))}\n"
+                f"user   = {_rand_user(rng)}\n"
+                f"pass   = {_rand_pass(rng)}\n"
+                f"psk    = {rng.getrandbits(64):016x}\n")
+    return f"confidential - internal use only\nref {rng.getrandbits(48):012x}\n"
+
+
+def _kind_of(name: str) -> str:
+    low = name.lower()
+    return next((kind for hint, kind in _KIND_HINTS if hint in low), "generic")
+
+
+def default_names(rng: random.Random) -> list[str]:
+    """One randomly-picked tempting name per bait kind."""
+    return [rng.choice(pool) for pool in _NAME_POOLS.values()]
 
 
 def default_state_path(base: Path | None = None) -> Path:
@@ -121,7 +162,8 @@ def _record(p: Path, planted_at: float) -> dict:
 
 
 def deploy(targets: list[Path] | None = None, state_path: Path | None = None,
-           now: float = 0.0, names: list[str] | None = None) -> dict:
+           now: float = 0.0, names: list[str] | None = None,
+           rng: random.Random | None = None) -> dict:
     """Plant decoy files and record their fingerprints to ``state_path``.
 
     Args:
@@ -129,18 +171,25 @@ def deploy(targets: list[Path] | None = None, state_path: Path | None = None,
                   Each dir is created if missing.
       state_path: where to write the JSON state (default: default_state_path()).
       now:        timestamp to stamp as ``planted_at`` (injected -- no clock read).
-      names:      decoy filenames to use (default: the four built-in bait names);
-                  unknown names get a generic bait body.
+      names:      decoy filenames to use (default: one random tempting name per
+                  bait kind); each gets random bait fitting its name.
+      rng:        randomness source (default: the OS CSPRNG); tests seed it.
 
     Never overwrites an existing real file: if a chosen name already exists in a
     target dir, that name is SKIPPED for that dir (and not recorded), so a user's
     own file can never be clobbered or mistaken for a canary.
 
+    A second deploy ADDS to the existing state (audit #8): decoys planted earlier
+    stay tracked, so check() still watches them and clear() still removes them.
+
     Returns a summary dict: {planted, state_path, canaries:[paths...], skipped}.
     """
     targets = [Path(t) for t in (targets if targets is not None else _default_targets())]
     state_path = Path(state_path) if state_path is not None else default_state_path()
-    names = list(names) if names is not None else list(_DEFAULT_BAIT.keys())
+    rng = rng if rng is not None else random.SystemRandom()
+    names = list(names) if names is not None else default_names(rng)
+    previous = (_load_state(state_path) or {}).get("canaries") or []
+    tracked = {str(r.get("path", "")).lower() for r in previous}
 
     records: list[dict] = []
     skipped: list[str] = []
@@ -153,10 +202,12 @@ def deploy(targets: list[Path] | None = None, state_path: Path | None = None,
         for nm in names:
             dest = tdir / nm
             if dest.exists():
-                # never clobber a real file the user already has
-                skipped.append(str(dest))
+                # never clobber a real file the user already has (or re-plant
+                # one of our own decoys: it stays tracked from the earlier deploy)
+                skipped.append(str(dest) + (" (already a decoy)"
+                                            if str(dest).lower() in tracked else ""))
                 continue
-            body = _DEFAULT_BAIT.get(nm, f"confidential - {nm}\n(internal use only)\n")
+            body = _bait_for(_kind_of(nm), rng)
             try:
                 dest.write_text(body, encoding="utf-8")
                 # _record hashes then pins mtime/atime to `now`, giving check()
@@ -165,7 +216,7 @@ def deploy(targets: list[Path] | None = None, state_path: Path | None = None,
             except Exception:
                 skipped.append(str(dest) + " (write failed)")
 
-    state = {"canaries": records, "deployed_at": now,
+    state = {"canaries": list(previous) + records, "deployed_at": now,
              "atime_note": ATIME_NOTE}
     state_path.parent.mkdir(parents=True, exist_ok=True)
     state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
