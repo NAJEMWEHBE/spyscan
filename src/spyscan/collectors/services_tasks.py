@@ -1,7 +1,8 @@
 from __future__ import annotations
 import csv, io, subprocess
+from spyscan import powershell
 from spyscan.facts import Fact, make_key
-from spyscan.collectors.base import Collector, ScanContext, is_tempish
+from spyscan.collectors.base import Collector, ScanContext, decode_console, has_csv_column, is_tempish
 
 name = "services_tasks"
 SERVICE_ATTACK = "T1543.003"        # Create or Modify System Process: Windows Service
@@ -11,15 +12,32 @@ TASK_ATTACK = "T1053.005"           # Scheduled Task/Job: Scheduled Task
 #   Win32_Service | ConvertTo-Csv : Name,DisplayName,PathName,StartMode,State,StartName,ServiceType
 #   schtasks /query /fo csv /v     : HostName,TaskName,...,Task To Run,...,Run As User,Author,Status,...
 
+# schtasks prints LOCALIZED column headers ('Nom de la tache', ...), so on a
+# non-English Windows 'TaskName' never appears and every task vanished (audit #12).
+# Then this asks Get-ScheduledTask instead -- its property names are English on
+# every locale -- and emits the SAME columns _parse_tasks reads, one row per
+# trigger like schtasks does. Constant text, run through spyscan.powershell.
+TASKS_FALLBACK = (
+    "Get-ScheduledTask | ForEach-Object { "
+    "$t = $_; "
+    "$run = (@($t.Actions) | Where-Object { $_.Execute } | ForEach-Object { "
+    "(($_.Execute + ' ' + $_.Arguments).Trim()) }) -join '; '; "
+    "$trig = @($t.Triggers | ForEach-Object { "
+    "$_.CimClass.CimClassName -replace '^MSFT_Task', '' -replace 'Trigger$', '' }); "
+    "if ($trig.Count -eq 0) { $trig = @('') }; "
+    "$state = if ([string]$t.State -eq 'Disabled') { 'Disabled' } else { 'Enabled' }; "
+    "foreach ($s in $trig) { [pscustomobject]@{ "
+    "'TaskName' = $t.TaskPath + $t.TaskName; 'Task To Run' = $run; "
+    "'Author' = $t.Author; 'Run As User' = $t.Principal.UserId; "
+    "'Scheduled Task State' = $state; 'Schedule Type' = $s; "
+    "'Status' = [string]$t.State; 'Last Run Time' = '' } } "
+    "} | ConvertTo-Csv -NoTypeInformation")
+
+
 def _ps_csv(ps_expr: str) -> bytes:
-    """Run a PowerShell pipeline that ends in ConvertTo-Csv, return its bytes."""
-    try:
-        out = subprocess.run(
-            ["powershell", "-NoProfile", "-Command", ps_expr],
-            capture_output=True, timeout=60)
-        return out.stdout
-    except Exception:
-        return b""
+    """Run a constant PowerShell pipeline that ends in ConvertTo-Csv (UTF-8 out)."""
+    return powershell.run(ps_expr)
+
 
 def gather() -> dict:                        # impure edge (integration-tested)
     services = _ps_csv(
@@ -32,13 +50,14 @@ def gather() -> dict:                        # impure edge (integration-tested)
             capture_output=True, timeout=60).stdout
     except Exception:
         tasks = b""
+    if not has_csv_column(tasks, "TaskName"):
+        tasks = _ps_csv(TASKS_FALLBACK)
     return {"services": services, "tasks": tasks}
 
 def _reader(raw: bytes):
     if not raw:
         return iter(())
-    text = raw.decode("utf-8-sig", errors="replace")
-    return csv.DictReader(io.StringIO(text))
+    return csv.DictReader(io.StringIO(decode_console(raw)))
 
 def _parse_services(raw: bytes) -> list[Fact]:
     facts = []

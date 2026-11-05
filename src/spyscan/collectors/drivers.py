@@ -1,7 +1,8 @@
 from __future__ import annotations
 import csv, io, subprocess
+from spyscan import powershell
 from spyscan.facts import Fact, make_key
-from spyscan.collectors.base import Collector, ScanContext, is_tempish
+from spyscan.collectors.base import Collector, ScanContext, decode_console, has_csv_column, is_tempish
 
 name = "drivers"
 ATTACK = "T1014"            # Rootkit (kernel driver implant); also relates to T1543.003
@@ -10,19 +11,34 @@ ATTACK = "T1014"            # Rootkit (kernel driver implant); also relates to T
 #   Module Name,Display Name,Description,Driver Type,Start Mode,State,Status,
 #   Accept Stop,Accept Pause,Paged Pool(bytes),Code(bytes),BSS(bytes),Link Date,Path,Init(bytes)
 
+# driverquery prints LOCALIZED headers ('Nom du module', ...), so on a non-English
+# Windows 'Module Name' never appears and every driver vanished (audit #12). Then
+# this asks CIM instead (English property names on every locale) and emits the
+# SAME columns parse() reads. Driver Type is trimmed to driverquery's wording
+# ('Kernel Driver' -> 'Kernel'). Constant text, run through spyscan.powershell.
+DRIVERS_FALLBACK = (
+    "Get-CimInstance Win32_SystemDriver | ForEach-Object { [pscustomobject]@{ "
+    "'Module Name' = $_.Name; 'Display Name' = $_.DisplayName; "
+    "'Driver Type' = ([string]$_.ServiceType -replace ' Driver$', ''); "
+    "'Start Mode' = $_.StartMode; 'State' = $_.State; 'Status' = $_.Status; "
+    "'Link Date' = ''; 'Path' = $_.PathName } } | ConvertTo-Csv -NoTypeInformation")
+
+
 def gather() -> bytes:                       # impure edge (integration-tested)
     try:
         out = subprocess.run(
             ["driverquery", "/fo", "csv", "/v"],
-            capture_output=True, timeout=60)
-        return out.stdout
+            capture_output=True, timeout=60).stdout
     except Exception:
-        return b""
+        out = b""
+    if not has_csv_column(out, "Module Name"):
+        out = powershell.run(DRIVERS_FALLBACK)
+    return out
 
 def parse(raw: bytes) -> list[Fact]:         # PURE
     if not raw:
         return []
-    text = raw.decode("utf-8-sig", errors="replace")
+    text = decode_console(raw)
     reader = csv.DictReader(io.StringIO(text))
     facts = []
     for row in reader:
