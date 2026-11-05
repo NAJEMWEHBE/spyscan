@@ -15,24 +15,88 @@ bad/absent config.
 """
 from __future__ import annotations
 import json
+import ntpath
+import re
 from fnmatch import fnmatch
 from pathlib import Path
 
-# Fact attrs that hold an on-disk image path (tested against path_globs).
-_PATH_ATTRS = ("exe", "image_path", "image", "path")
+from spyscan.facts import IMAGE_PATH_ATTRS, image_path_of
+from spyscan.collectors.base import is_tempish
+
+# Fact attrs that hold an on-disk image path (tested against path_globs). The ONE
+# list lives in facts.py and is shared with the enrichment pass (audit #2).
+_PATH_ATTRS = IMAGE_PATH_ATTRS
+
+# Signer common names that ARE Microsoft's own code. Exact match, not "contains
+# microsoft": the Hardware Compatibility Publisher (WHQL/attestation signing) and
+# the 3rd Party Application Component cert sign OTHER vendors' code (malicious
+# attestation-signed drivers exist), and any vendor can put "Microsoft" in its
+# own name (audit #4).
+_MS_SIGNER_CNS = frozenset({
+    "microsoft windows",
+    "microsoft corporation",
+    "microsoft windows publisher",
+    "microsoft windows early launch anti-malware publisher",
+})
+_CN_RE = re.compile(r'(?:^|,)\s*CN\s*=\s*("?)([^,"]+)\1', re.IGNORECASE)
+
+# Microsoft-signed hosts whose job is to run SOMETHING ELSE (a script, a DLL, a
+# command line). Their signature says nothing about the payload, so with any
+# argument they get no Microsoft floor and are scored on their other signals.
+_SCRIPT_HOSTS = frozenset({
+    "powershell", "pwsh", "cmd", "wscript", "cscript", "mshta", "rundll32", "regsvr32",
+})
+
+
+def is_microsoft_signer(signer: str) -> bool:
+    """True if a signer string ('Microsoft Windows' or a full X.500 subject
+    'CN=Microsoft Windows, O=...') names one of Microsoft's own signing certs."""
+    s = str(signer or "").strip()
+    m = _CN_RE.search(s)
+    cn = m.group(2) if m else s
+    return cn.strip().lower() in _MS_SIGNER_CNS
+
+
+def _host_name(path: str) -> str:
+    """'C:/Windows/System32/cmd.exe' -> 'cmd'; 'powershell' -> 'powershell'."""
+    base = ntpath.basename(str(path or "").strip().strip('"')).lower()
+    return base[:-4] if base.endswith(".exe") else base
+
+
+def _args_after(cmd: str, host: str) -> str:
+    """Whatever a command line passes AFTER the host program ('' if nothing)."""
+    c = str(cmd or "").strip()
+    # the host as the program token: 'cmd', 'cmd.exe', '...\cmd.exe"' followed by
+    # a space or the end -- never a substring of a folder ('WindowsPowerShell\')
+    m = re.search(re.escape(host) + r'(?:\.exe)?"?(?=\s|$)', c, re.IGNORECASE)
+    return c[m.end():].strip() if m else ""
+
+
+def _runs_foreign_payload(attrs: dict) -> bool:
+    """True when what the entry RUNS is not just the signed binary itself: a
+    script/proxy host given any argument, or a launch string that reaches into a
+    temp/AppData path the image itself is not in (audit #4)."""
+    image = image_path_of(attrs)
+    launches = [str(attrs.get("launch_string") or "")] + [
+        str(c) for c in (attrs.get("cmdlines") or [])]
+    host = _host_name(image)
+    if host in _SCRIPT_HOSTS and any(_args_after(l, host) for l in launches):
+        return True
+    if not is_tempish(image) and any(is_tempish(l) for l in launches):
+        return True
+    return False
 
 
 def _is_ms_signed(attrs: dict) -> bool:
-    """True if a fact is Microsoft-signed AND its signature verified -- the built-in
-    known-good floor folded in from score.py (ADR 0001). Verified-gating is load-bearing:
-    an UNVERIFIED fact whose signer merely claims 'Microsoft' must NOT floor (spoofed-cert
-    bypass). Mirrors score.py's old condition exactly, incl. the cross-collector `or`
-    (enriched facts set trusted_ms; autoruns facts set verified+signer but not trusted_ms)."""
-    if attrs.get("trusted_ms"):
-        return True
-    if attrs.get("verified") and "microsoft" in str(attrs.get("signer", "")).lower():
-        return True
-    return False
+    """True if a fact is Microsoft-signed AND its signature verified AND it runs
+    only itself -- the built-in known-good floor folded in from score.py (ADR
+    0001). Verified-gating is load-bearing: an UNVERIFIED fact whose signer merely
+    claims 'Microsoft' must NOT floor (spoofed-cert bypass). The cross-collector
+    `or` stays (enriched facts set trusted_ms; autoruns facts set verified+signer
+    but not trusted_ms)."""
+    signed_by_ms = bool(attrs.get("trusted_ms")) or bool(
+        attrs.get("verified") and is_microsoft_signer(attrs.get("signer", "")))
+    return signed_by_ms and not _runs_foreign_payload(attrs)
 
 
 class Allowlist:

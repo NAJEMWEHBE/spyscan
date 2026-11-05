@@ -1,7 +1,7 @@
 # src/spyscan/pipeline.py
 from __future__ import annotations
 from pathlib import Path
-from spyscan.facts import Fact
+from spyscan.facts import Fact, image_path_of
 from spyscan.finding import Finding
 from spyscan.diff import diff_facts
 from spyscan.score import score_fact, no_resolvable_parent
@@ -84,8 +84,7 @@ def _default_signer(path: str) -> dict:
 
 def _exe_path_for(f: Fact) -> str:
     """Resolvable on-disk image path for a fact, or '' if none."""
-    a = f.attrs
-    return (a.get("exe") or a.get("image") or a.get("path") or "").strip()
+    return image_path_of(f.attrs)
 
 
 def _is_enrich_candidate(finding: "Finding") -> bool:
@@ -110,12 +109,19 @@ def _is_enrich_candidate(finding: "Finding") -> bool:
     return False
 
 
-def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist) -> None:
+def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
+                     observed: dict | None = None) -> None:
     """Set a['allowlisted']/a['allowlist_reason'] in place if the fact matches a
     user allowlist rule. score_fact treats this exactly like the Microsoft floor
-    (known-bad always overrides), so it can never hide real malware."""
+    (known-bad always overrides), so it can never hide real malware.
+
+    A process's command lines live in ``observed`` (volatile, never diffed) but
+    the Microsoft floor must see them: an MS-signed powershell.exe running a
+    payload is not "known good" (audit #4)."""
     attrs = dict(a)
     attrs.setdefault("entity_key", entity_key)
+    if observed and observed.get("cmdlines"):
+        attrs.setdefault("cmdlines", list(observed["cmdlines"]))
     ok, reason = allowlist.matches(attrs)
     if ok:
         a["allowlisted"] = True
@@ -181,7 +187,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
             a["ioc_procname_hit"] = ioc.match_proc(_procname_for(f))
 
         # user allowlist (floors to INFO in score_fact unless known-bad fires)
-        _apply_allowlist(a, f.entity_key, allowlist)
+        _apply_allowlist(a, f.entity_key, allowlist, f.observed)
 
         enriched = Fact(f.collector, f.entity_key, f.kind, f.label, a, f.attack_id,
                         f.observed)
@@ -247,7 +253,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
                 defender_skipped += 1
         # re-apply the allowlist: enrichment may have resolved a signer/sha that
         # now matches a signer/hash rule (path_globs already matched in pass 1).
-        _apply_allowlist(a, fd.fact.entity_key, allowlist)
+        _apply_allowlist(a, fd.fact.entity_key, allowlist, fd.fact.observed)
         # re-score with the freshly-enriched attrs (interacts with FIX 1: a now-
         # signed temp app can be allowlisted; a now-flagged one escalates)
         r = score_fact(fd.fact)
@@ -269,7 +275,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
         a = dict(rf.attrs)
         a["removed_since_baseline"] = True
         a.pop("is_new", None)  # a removed entry is not "new"; drop any stale baseline flag
-        _apply_allowlist(a, rf.entity_key, allowlist)
+        _apply_allowlist(a, rf.entity_key, allowlist, rf.observed)
         gone = Fact(rf.collector, rf.entity_key, rf.kind, rf.label, a, rf.attack_id,
                     rf.observed)
         r = score_fact(gone)

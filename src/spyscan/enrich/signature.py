@@ -2,13 +2,17 @@ from __future__ import annotations
 import os
 import subprocess
 
+from spyscan.allowlist import is_microsoft_signer
+
 def parse_status(line: str) -> dict:
     """line = '<Status>|<SignerSubject>' from Get-AuthenticodeSignature."""
     status, _, signer = line.partition("|")
     status = status.strip()
     signer = signer.strip()
     signed = status.lower() == "valid"
-    trusted_ms = signed and "microsoft" in signer.lower()
+    # exact Microsoft subjects only: "contains microsoft" also matched the Hardware
+    # Compatibility Publisher, which signs third-party drivers (audit #4)
+    trusted_ms = signed and is_microsoft_signer(signer)
     # verified mirrors signed: True only when Authenticode Status == Valid.
     return {"signed": signed, "verified": signed, "status": status,
             "signer": signer, "trusted_ms": trusted_ms}
