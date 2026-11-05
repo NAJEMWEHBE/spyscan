@@ -122,6 +122,8 @@ def score_fact(f: Fact) -> dict:
         add(2, "no resolvable parent")
     if a.get("ioc_domain_hit"):
         add(3, "connects to known mercenary/C2 domain")
+    if a.get("ioc_dns_hit"):
+        add(5, "this PC looked up a known mercenary/C2 domain (DNS cache)")
     if a.get("ioc_procname_hit"):
         add(5, "process name matches known implant daemon")
     if a.get("in_use_now") and not a.get("trusted_ms"):
