@@ -28,7 +28,8 @@ from spyscan.rules.ioc import IOCMatcher
 from spyscan.allowlist import Allowlist
 from spyscan.report.json_out import render_json
 from spyscan.report.html import render_html
-from spyscan.resources import resource_dir, bundle_dir, app_base, is_frozen
+from spyscan.resources import (resource_dir, bundle_dir, app_base, is_frozen,
+                               is_source_checkout)
 from spyscan import canary
 
 # Writable runtime base: dev -> repo root; frozen -> the dir next to the exe.
@@ -50,11 +51,13 @@ def _root(root: Path | None) -> Path:
 def indicators_dir(root: Path | None = None) -> Path:
     """IOC indicator-list dir.
 
-    Frozen: resolve the BUNDLED copy (read-only, under the package in _MEIPASS).
-    Dev: the in-tree ``<root>/src/spyscan/rules/indicators`` so tests that repoint
-    ``root`` (and the real source tree) keep working.
+    Frozen or installed: the copy shipped INSIDE the package (read-only; for an
+    installed wheel the root-relative path would point into Python's Lib and load
+    silently empty, audit #20). Source checkout: the in-tree
+    ``<root>/src/spyscan/rules/indicators`` so tests that repoint ``root`` (and
+    the real source tree) keep working.
     """
-    if is_frozen():
+    if is_frozen() or not is_source_checkout():
         return resource_dir("rules", "indicators")
     return _root(root) / "src" / "spyscan" / "rules" / "indicators"
 
