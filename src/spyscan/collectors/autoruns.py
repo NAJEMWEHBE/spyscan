@@ -13,7 +13,7 @@ ATTACK = "T1547.001"   # Boot or Logon Autostart Execution: Registry Run/Startup
 # software ... to any third party"), with no free/non-commercial exception. The shipped
 # build carries NO copy; default autostart coverage comes from the native
 # `autostart_native` collector. This module runs autorunsc ONLY when a copy the USER
-# installed (or, in dev, Nino's own private copy -- private use is permitted) is found.
+# installed (or, in dev, the maintainer's own private copy -- private use is permitted) is found.
 #
 # Dev-only location of a private user-provided autorunsc (src/spyscan/collectors -> repo).
 _DEV_AUTORUNSC = Path(__file__).resolve().parents[3] / "tools" / "autorunsc64.exe"
@@ -33,7 +33,7 @@ def _resolve_autorunsc() -> Path:
       a) PATH (``autorunsc64`` / ``autorunsc``),
       b) ``<exe_dir>/tools`` when frozen -- a user can drop their own next to the exe,
       c) standard Sysinternals install dirs,
-      d) the dev tree (Nino's private copy; private use is permitted).
+      d) the dev tree (the maintainer's private copy; private use is permitted).
     Returns the first existing path, else a best-effort default Path named
     ``autorunsc64.exe`` so ``gather`` degrades gracefully rather than crashing.
     """
