@@ -86,6 +86,15 @@ def test_without_a_cache_nothing_changes():
     assert sorted(f.fact.kind for f in out) == ["connection", "process"]
 
 
+def test_a_dns_finding_can_be_quieted_by_its_entity_key():
+    out = build_findings([SEED], [SEED], IOC, signer=lambda p: {},
+                         allowlist=Allowlist(entity_keys=["dnscache::lookup.grayhornet.com"]),
+                         log=lambda *a: None, dns=dnscache.parse(CACHE_CSV))
+    by = {f.fact.attrs.get("name"): f for f in out if f.fact.kind == "dns_lookup"}
+    assert by["lookup.grayhornet.com"].bucket == "INFO"
+    assert by["cdn.urlpush.net"].bucket == "REVIEW"
+
+
 def test_gather_reads_the_cache_through_the_powershell_adapter(monkeypatch):
     calls = []
 
