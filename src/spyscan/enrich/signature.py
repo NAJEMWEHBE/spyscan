@@ -46,7 +46,7 @@ def resolve_image(path: str) -> str:
         return ""
     if ntpath.dirname(p):
         return p if os.path.isfile(p) else ""
-    names = [p] if p.lower().endswith(".exe") or "." in p else [p, p + ".exe"]
+    names = [p] if "." in p else [p, p + ".exe"]
     root = os.environ.get("SystemRoot") or os.environ.get("windir") or ""
     dirs = [ntpath.join(root, "System32"), root] if root else []
     dirs += [d for d in os.environ.get("PATH", "").split(os.pathsep) if d and d != "."]
