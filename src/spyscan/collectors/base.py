@@ -1,4 +1,6 @@
 from __future__ import annotations
+import csv
+import io
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from pathlib import Path
@@ -15,6 +17,49 @@ def is_tempish(path: str) -> bool:
     """True if ``path`` sits under a temp/AppData location (case-insensitive)."""
     low = (path or "").lower()
     return any(t in low for t in _TEMPISH)
+
+
+def _oem_codepage() -> int | None:
+    """The console (OEM) code page Windows tools like schtasks write in."""
+    try:
+        import ctypes
+        return int(ctypes.windll.kernel32.GetOEMCP())
+    except Exception:
+        return None
+
+
+def decode_console(raw: bytes) -> str:
+    """Decode a Windows console tool's output (audit #12).
+
+    UTF-8 when it is valid UTF-8 (incl. pure ASCII, so English output decodes
+    exactly as before), otherwise the OEM code page (cp437/850/720...), which is
+    what schtasks/driverquery write on a non-English system.
+    """
+    raw = raw or b""
+    try:
+        return raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        pass
+    cp = _oem_codepage()
+    if cp:
+        try:
+            return raw.decode(f"cp{cp}", errors="replace")
+        except LookupError:
+            pass
+    return raw.decode("utf-8", errors="replace")
+
+
+def has_csv_column(raw: bytes, column: str) -> bool:
+    """True when the first CSV row of a console tool's output names ``column``.
+
+    schtasks/driverquery localize their headers, so a missing English column
+    means "this Windows is not English" -> use the PowerShell fallback (#12).
+    """
+    text = decode_console(raw).lstrip()
+    if not text:
+        return False
+    header = next(csv.reader(io.StringIO(text)), [])
+    return column in (h.strip() for h in header)
 
 
 def exe_from_command(cmd: str) -> str:
