@@ -27,7 +27,7 @@ from flask import Flask, jsonify, send_from_directory, abort, request, redirect
 
 from spyscan import service
 from spyscan import canary
-from spyscan.store import BaselineStore
+from spyscan.store import baseline_count
 from spyscan.allowlist import Allowlist
 from spyscan.resources import resource_dir
 
@@ -52,12 +52,9 @@ def _same(a: str, b: str) -> bool:
 
 
 def _baseline_count(db: Path) -> int | None:
-    """Return the number of baseline facts, or None if no baseline exists yet."""
-    try:
-        facts = BaselineStore(db).load_baseline()
-    except Exception:
-        return None
-    return len(facts) if facts else None
+    """Return the number of baseline facts, or None if no baseline exists yet.
+    Read-only: a status read never creates baseline.db (audit #17)."""
+    return baseline_count(db)
 
 
 def _last_scan_meta(root: Path) -> dict | None:

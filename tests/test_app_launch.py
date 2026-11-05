@@ -5,7 +5,16 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
+from spyscan import service
 from spyscan.app import launch
+
+
+@pytest.fixture(autouse=True)
+def _tmp_root(tmp_path, monkeypatch):
+    """start_server() builds the app on service.ROOT: point it at tmp_path so a
+    launch test never reads or writes the real repo root (audit #17)."""
+    monkeypatch.setattr(service, "ROOT", tmp_path)
+    return tmp_path
 
 
 def _base(url: str) -> str:
@@ -100,3 +109,12 @@ def test_open_window_falls_back_when_window_init_raises(monkeypatch):
     path = launch.open_window("http://127.0.0.1:9/", log=lambda *a: None)
     assert path == "browser"
     assert opened["url"] == "http://127.0.0.1:9/"
+
+
+def test_launch_test_server_uses_the_tmp_root(_tmp_root):
+    url, httpd, t = launch.start_server(log=lambda *a: None)
+    try:
+        assert launch._wait_until_up(url, timeout=5.0)
+        assert not (_tmp_root / "baseline.db").exists()   # status read wrote nothing
+    finally:
+        httpd.shutdown()
