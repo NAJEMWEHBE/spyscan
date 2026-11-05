@@ -1,7 +1,7 @@
 # src/spyscan/pipeline.py
 from __future__ import annotations
 from pathlib import Path
-from spyscan.facts import Fact, image_path_of
+from spyscan.facts import Fact, image_path_of, make_key
 from spyscan.collectors.base import exe_from_command
 from spyscan.finding import Finding
 from spyscan.diff import diff_facts
@@ -140,7 +140,7 @@ def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
 def build_findings(baseline: list[Fact], current: list[Fact],
                    ioc: IOCMatcher, *, signer=None, defender=None,
                    max_enrich: int = 50, defender_max: int = 10,
-                   log=print, allowlist=None) -> list["Finding"]:
+                   log=print, allowlist=None, dns=None) -> list["Finding"]:
     """Mark is_new via baseline diff, enrich with IOC hits, score, then run a
     SCOPED + CAPPED signature/Defender enrichment pass over the most suspicious
     process/autostart facts and re-score just those.
@@ -166,9 +166,12 @@ def build_findings(baseline: list[Fact], current: list[Fact],
 
     IOC enrichment notes:
       * ioc_procname_hit  -- process name (or autoruns entry) vs implant-daemon list.
-      * ioc_domain_hit    -- NOTE: netconns carry remote IPs, not hostnames, so this
-                            is a best-effort IP/literal match until DNS resolution
-                            lands in Phase-2. We only test it for connection facts.
+      * ioc_domain_hit    -- netconns carry remote IPs, not hostnames, so the
+                            remote IP is mapped back to its names through ``dns``
+                            (an enrich.dnscache.DnsCache; None = no cache) and each
+                            name is tested (audit #13).
+      * dns_lookup        -- a cached lookup of a listed domain that no connection
+                            explains becomes its own finding.
     """
     if signer is None:
         signer = _default_signer
@@ -181,6 +184,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
 
     # --- first pass: cheap signals only ---
     findings = []
+    explained: set[str] = set()          # IOC names already shown on a connection
     for f in current:
         a = dict(f.attrs)
         a["is_new"] = f.entity_key in new_keys
@@ -190,8 +194,11 @@ def build_findings(baseline: list[Fact], current: list[Fact],
 
         # IOC enrichment
         if a.get("remote_ip"):
-            # best-effort: netconns expose IPs not hostnames (see docstring)
-            a["ioc_domain_hit"] = ioc.match_domain(a.get("remote_ip", ""))
+            hit = _ioc_host_for(a["remote_ip"], ioc, dns)
+            a["ioc_domain_hit"] = hit is not None
+            if hit:
+                a["ioc_domain"] = hit
+                explained.add(hit)
         if f.kind in ("process", "autostart"):
             a["ioc_procname_hit"] = ioc.match_proc(_procname_for(f))
 
@@ -294,4 +301,28 @@ def build_findings(baseline: list[Fact], current: list[Fact],
         findings.append(Finding(fact=gone, score=r["score"], bucket=r["bucket"],
                                 reasons=r["reasons"], attack_id=rf.attack_id))
 
+    # a cached lookup of a listed domain with no connection that explains it:
+    # something on this PC resolved a known C2 domain (audit #13)
+    for name in sorted(dns.names if dns is not None else ()):
+        if name in explained or not ioc.match_domain(name):
+            continue
+        a = {"name": name, "ioc_dns_hit": True}
+        hit = Fact("dnscache", make_key("dnscache", name), "dns_lookup",
+                   f"DNS lookup: {name}", a, "T1071")
+        r = score_fact(hit)
+        findings.append(Finding(fact=hit, score=r["score"], bucket=r["bucket"],
+                                reasons=r["reasons"], attack_id="T1071"))
+
     return sorted(findings, key=lambda x: x.score, reverse=True)
+
+
+def _ioc_host_for(remote_ip: str, ioc: IOCMatcher, dns) -> str | None:
+    """The listed domain a remote IP belongs to, or None. A literal IP entry
+    still matches; otherwise every cached name that resolved to it is tested."""
+    if ioc.match_domain(remote_ip):
+        return remote_ip
+    names = dns.by_ip.get(remote_ip, ()) if dns is not None else ()
+    for name in sorted(names):
+        if ioc.match_domain(name):
+            return name
+    return None

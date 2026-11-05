@@ -88,7 +88,7 @@
     <div class="card"><h3>Baseline, then diff</h3>
       <p>On a machine you trust, SpyScan snapshots processes, services, drivers, scheduled tasks, autostarts, network connections, and the mic/camera consent store. Every later scan is diffed against that baseline — new or changed persistence is what implants need and what SpyScan surfaces.</p></div>
     <div class="card"><h3>Known-spyware IOCs</h3>
-      <p>Findings are matched against curated mercenary-spyware and stalkerware indicator lists (process names, domains), with MITRE ATT&amp;CK technique references on every finding so you can look up exactly what a signal means.</p></div>
+      <p>Findings are checked against a short, cited list of mercenary-spyware indicators (implant process names, and C2 domains matched against this PC's DNS cache), with MITRE ATT&amp;CK technique references on every finding so you can look up exactly what a signal means. Most published indicators target phones, so on Windows the baseline diff, signatures and behaviour carry the weight.</p></div>
     <div class="card"><h3>Canary tripwires</h3>
       <p>Decoy files that nothing legitimate should ever touch. If one is changed, moved or deleted, that alone raises an alert. Turn on Windows access auditing once with <code>spyscan canary audit-setup</code> (as admin), and a program that only reads or copies your fake <em>passwords.txt</em> raises an alert too, naming the program. No signature needed, so it can catch implants no IOC list knows yet.</p></div>
     <div class="card"><h3>Yours, locally</h3>

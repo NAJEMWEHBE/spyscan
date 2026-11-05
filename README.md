@@ -23,7 +23,7 @@ Snapshots a known-good machine, then on later scans flags what is **NEW / suspic
 
 Three detection engines feed **one 0–100 score** per entity:
 1. **baseline-diff** — what changed since your clean snapshot,
-2. **signature/IOC** — known mercenary-spyware domains + implant daemon names (Pegasus/Predator/Candiru, cited from Amnesty/Citizen Lab), Authenticode signing, Windows Defender second-opinion,
+2. **signature/IOC** — known mercenary-spyware domains (matched against the Windows DNS cache: a connection to an IP resolved from a listed domain, or a cached lookup of one) + implant daemon names (Pegasus/Predator/Candiru, cited from Amnesty/Citizen Lab; most target phones, so on Windows they rarely fire), Authenticode signing, Windows Defender second-opinion,
 3. **behavioral** — temp-path / unsigned / no-parent / beaconing / live cam-mic.
 
 Buckets: **ALERT ≥8 · REVIEW 4–7 · INFO <4.** Microsoft-signed is allowlisted to INFO — **unless** a known-bad signal (Defender hit / IOC name) is present, which always overrides the allowlist (no signed-malware bypass). Loopback/ephemeral connections are floored to benign so the report doesn't drown in churn.

@@ -22,6 +22,7 @@ from spyscan.collectors import COLLECTORS
 from spyscan.collectors.base import ScanContext
 from spyscan.pipeline import build_findings
 from spyscan.enrich import defender as _defender
+from spyscan.enrich import dnscache as _dnscache
 from spyscan.finding import Finding
 from spyscan.score import Bucket
 from spyscan.rules.ioc import IOCMatcher
@@ -155,9 +156,16 @@ def _summary(findings: list[Finding]) -> dict:
             "allowlisted": allowlisted, "total": len(findings)}
 
 
+def _live_dns():
+    """The live DNS client cache (never raises). One seam, so the test suite can
+    keep every scan off the real cache (tests/conftest.py)."""
+    return _dnscache.gather()
+
+
 def run_scan(root: Path | None = None, db: Path | None = None, *,
              collect=None, log=print, enable_defender: bool = False,
-             ind: Path | None = None, allowlist_file: Path | None = None) -> dict:
+             ind: Path | None = None, allowlist_file: Path | None = None,
+             dns=None) -> dict:
     """Run a full scan: collect -> load IOC + allowlist -> build_findings ->
     write both report files -> return a structured dict.
 
@@ -199,9 +207,11 @@ def run_scan(root: Path | None = None, db: Path | None = None, *,
     # Defender is a heavy, opt-in per-file second opinion (off by default). When
     # enabled, pass its on-demand single-file scanner; build_findings caps how many
     # of the most-suspicious files it actually scans (defender_max).
+    # The DNS cache maps remote IPs back to names for the domain IOC list (#13).
+    cache = dns() if dns is not None else _live_dns()
     findings = build_findings(base, current, ioc, max_enrich=50,
                               defender=_defender.scan_file if enable_defender else None,
-                              allowlist=allowlist, log=log)
+                              allowlist=allowlist, log=log, dns=cache)
 
     meta = {"host": socket.gethostname(),
             "when": datetime.now(timezone.utc).isoformat(timespec="seconds")}
