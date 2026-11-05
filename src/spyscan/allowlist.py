@@ -87,6 +87,19 @@ def _runs_foreign_payload(attrs: dict) -> bool:
     return False
 
 
+def script_host_args(attrs: dict) -> list[str]:
+    """The arguments each launch hands a script/proxy host (powershell, cmd,
+    rundll32...), or [] when the image is not one. Used by first look (#18)."""
+    host = _host_name(image_path_of(attrs))
+    if host not in _SCRIPT_HOSTS:
+        return []
+    launches = [str(attrs.get("launch_string") or "")] + [
+        str(c) for c in (attrs.get("cmdlines") or [])]
+    if attrs.get("task_to_run"):
+        launches.append(str(attrs["task_to_run"]))
+    return [a for l in launches if (a := _args_after(l, host))]
+
+
 def _is_ms_signed(attrs: dict) -> bool:
     """True if a fact is Microsoft-signed AND its signature verified AND it runs
     only itself -- the built-in known-good floor folded in from score.py (ADR

@@ -36,6 +36,7 @@
           <span class="spinner" hidden></span>
         </button>
         <p id="scanHint" class="hint">A full scan takes about 30&ndash;40 seconds.</p>
+        <button id="triageBtn" class="ghost" title="No baseline needed: for a PC you already suspect. It scores what is there now instead of what changed.">First look (no baseline)</button>
         <label class="defender-opt hint">
           <input type="checkbox" id="defenderToggle">
           Deep-scan the most suspicious files with Windows Defender (slower)
@@ -103,10 +104,17 @@
       <div class="canary-actions">
         <button id="canaryDeployBtn" class="ghost">Deploy decoys</button>
         <button id="canaryClearBtn" class="ghost" disabled>Clear decoys</button>
+        <button id="canaryAuditBtn" class="ghost" disabled>Catch reads too</button>
+      </div>
+      <div id="canaryAudit" hidden>
+        <p class="muted">Run these once in PowerShell opened <strong>as administrator</strong>, and again after each new deploy. SpyScan never runs them for you. Then run scans as administrator too, so it can read the Windows Security log.</p>
+        <pre id="canaryAuditCmds" class="canary-cmds"></pre>
+        <button id="canaryAuditCopyBtn" class="ghost">Copy commands</button>
       </div>
       <p class="caution">
         Plants harmless decoy files (a fake password list, wallet seed, payroll sheet and VPN login, with random names and made-up content).
-        If anything reads or modifies one, that is a strong spying signal &mdash; it shows up as an ALERT in the next scan.
+        If anything modifies, moves or deletes one, that is a strong spying signal &mdash; it shows up as an ALERT in the next scan.
+        To also catch a program that only <em>reads</em> or copies a decoy, use <strong>Catch reads too</strong> (or <code>spyscan canary audit-setup</code>) once and follow what it shows (needs admin).
         <span class="muted">100% local: no web beacon, no callback. Clear them when done so no fake-secret files are left behind.</span>
       </p>
     </section>

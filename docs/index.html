@@ -88,11 +88,24 @@
     <div class="card"><h3>Baseline, then diff</h3>
       <p>On a machine you trust, SpyScan snapshots processes, services, drivers, scheduled tasks, autostarts, network connections, and the mic/camera consent store. Every later scan is diffed against that baseline — new or changed persistence is what implants need and what SpyScan surfaces.</p></div>
     <div class="card"><h3>Known-spyware IOCs</h3>
-      <p>Findings are matched against curated mercenary-spyware and stalkerware indicator lists (process names, domains), with MITRE ATT&amp;CK technique references on every finding so you can look up exactly what a signal means.</p></div>
+      <p>Findings are checked against a short, cited list of mercenary-spyware indicators (implant process names, and C2 domains matched against this PC's DNS cache), with MITRE ATT&amp;CK technique references on every finding so you can look up exactly what a signal means. Most published indicators target phones, so on Windows the baseline diff, signatures and behaviour carry the weight.</p></div>
     <div class="card"><h3>Canary tripwires</h3>
-      <p>Decoy files that nothing legitimate should ever touch. If something reads your fake <em>passwords.txt</em>, that behavior alone raises an alert — no signature needed, so it can catch implants no IOC list knows yet.</p></div>
+      <p>Decoy files that nothing legitimate should ever touch. If one is changed, moved or deleted, that alone raises an alert. Turn on Windows access auditing once with <code>spyscan canary audit-setup</code> (as admin), and a program that only reads or copies your fake <em>passwords.txt</em> raises an alert too, naming the program. No signature needed, so it can catch implants no IOC list knows yet.</p></div>
     <div class="card"><h3>Yours, locally</h3>
       <p>Everything runs and stays on your machine: no cloud, no account, no upload, no telemetry. The report is a local HTML/JSON file. The optional Windows Defender deep-scan invokes the AV already on your system.</p></div>
+  </div>
+</section>
+
+<section>
+  <div class="limits">
+    <h2>If you think someone is watching you</h2>
+    <p style="color: var(--muted);">Your safety matters more than any scan result. Software that watches you can also show the person behind it that you scanned, searched for help, or removed something, and removing it can make things more dangerous.</p>
+    <ul>
+      <li><strong>Document first, remove later.</strong> Keep the report (<code>runs\last_scan.html</code> and <code>.json</code>), take photos of what you find, and note the dates. Do not delete anything until you have a plan.</li>
+      <li><strong>Plan from a device they have never had access to</strong>, such as a trusted friend's phone or a library computer.</li>
+      <li><strong>Get help.</strong> The <a href="https://stopstalkerware.org/">Coalition Against Stalkerware</a> lists support organisations by country. For example: in the US, the National Domestic Violence Hotline (1-800-799-7233); in the UK, the National Domestic Abuse Helpline (0808 2000 247). In danger, call your local emergency number.</li>
+      <li><strong>SpyScan leaves traces.</strong> It never removes anything, but its folder, its report and any decoy files can be seen by someone who uses this PC. <code>spyscan canary clear</code> removes the decoys.</li>
+    </ul>
   </div>
 </section>
 

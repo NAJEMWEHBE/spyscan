@@ -22,7 +22,17 @@ def cmd_scan(args):
                                   enable_defender=getattr(args, "defender", False))
     except RuntimeError:
         print("no baseline yet - run: spyscan baseline"); return 2
+    return _print_result(result)
 
+def cmd_triage(args):
+    """First look with no baseline, for a PC you already suspect (audit #18)."""
+    result = service.run_triage(collect=_collect_all,
+                                enable_defender=getattr(args, "defender", False))
+    print(f"{service.FIRST_LOOK_MODE}: scored on absolute signals; nothing is "
+          "compared to a baseline")
+    return _print_result(result)
+
+def _print_result(result):
     findings = result["findings"]
     s = result["summary"]
     print(f"findings: {s['total']}  ALERT: {s['alert']}  "
@@ -73,7 +83,9 @@ def cmd_canary(args):
         return 0
 
     if args.canary_cmd == "status":
-        trips = canary.check(state, now=time.time())
+        from spyscan.collectors import canary as canary_collector
+        # same rows as the scan: a decoy that was only READ shows as tripped too
+        trips = canary_collector.gather(state, now=time.time())
         if not trips:
             print("no canaries deployed - run: spyscan canary deploy")
             return 0
@@ -85,8 +97,22 @@ def cmd_canary(args):
             if t["tripped"]:
                 for r in t["reasons"]:
                     print(f"      - {r}")
+                who = sorted({e.get("process_name", "") for e in t.get("audit", [])
+                              if e.get("process_name")})
+                if who:
+                    print("      accessed by: " + ", ".join(who))
         # non-zero exit signals a trip (like scan's ALERT) for scripting
         return 1 if tripped else 0
+
+    if args.canary_cmd == "audit-setup":
+        # PRINTS the elevated commands; never runs or elevates anything (#9)
+        from spyscan import canary_audit
+        paths = canary.tracked_paths(state)
+        if not paths:
+            print("no canaries deployed - run: spyscan canary deploy first")
+            return 1
+        print(canary_audit.enable_audit_commands(paths))
+        return 0
 
     if args.canary_cmd == "clear":
         res = canary.clear(state)
@@ -114,6 +140,11 @@ def main(argv=None):
                         help="also deep-scan the most suspicious files with Windows "
                              "Defender (MpCmdRun); slower, off by default")
     scan_p.set_defaults(func=cmd_scan)
+    triage_p = sub.add_parser(
+        "triage", help="first look with no baseline, for a PC you already suspect")
+    triage_p.add_argument("--defender", action="store_true",
+                          help="also deep-scan the most suspicious files with Defender")
+    triage_p.set_defaults(func=cmd_triage)
     sub.add_parser("allowlist").set_defaults(func=cmd_allowlist)
     sub.add_parser("app").set_defaults(func=cmd_app)
 
@@ -125,6 +156,9 @@ def main(argv=None):
                             help="plant only into this dir (default: "
                                  "Desktop + Documents + app canaries/)")
     can_sub.add_parser("status", help="list canaries + whether any tripped")
+    can_sub.add_parser("audit-setup",
+                       help="print the admin commands that let a scan see a decoy "
+                            "being READ (prints only, never runs them)")
     can_sub.add_parser("clear", help="remove decoy files + state")
 
     args = p.parse_args(argv)

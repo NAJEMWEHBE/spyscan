@@ -19,14 +19,25 @@ Snapshots a known-good machine, then on later scans flags what is **NEW / suspic
 | `consentstore` | **webcam/mic in use right now** (registry `LastUsedTimeStop=0`) | T1125 / T1123 |
 | `services_tasks` | new services + scheduled tasks (path, run-as) | T1543.003 / T1053.005 |
 | `drivers` | loaded kernel drivers | T1014 |
-| `canary` | tripped honeyfile decoys (+8 → ALERT, never silenced) | T1530 |
+| `canary` | honeyfile decoys that were changed, moved or deleted, or **read** once access auditing is on (+8 → ALERT, never silenced; see [Canary tripwires](#canary-tripwires-decoy-files)) | T1530 |
 
-Three detection engines feed **one 0–100 score** per entity:
+Three detection engines add points to **one score** per entity (each signal adds a fixed number of points; there is no cap):
 1. **baseline-diff** — what changed since your clean snapshot,
-2. **signature/IOC** — known mercenary-spyware domains + implant daemon names (Pegasus/Predator/Candiru, cited from Amnesty/Citizen Lab), Authenticode signing, Windows Defender second-opinion,
-3. **behavioral** — temp-path / unsigned / no-parent / beaconing / live cam-mic.
+2. **signature/IOC** — known mercenary-spyware domains (matched against the Windows DNS cache: a connection to an IP resolved from a listed domain, or a cached lookup of one) + implant daemon names (Pegasus/Predator/Candiru, cited from Amnesty/Citizen Lab; most target phones, so on Windows they rarely fire), Authenticode signing, Windows Defender second-opinion,
+3. **behavioral** — temp-path / unsigned / no-parent / hidden-window or encoded PowerShell / live cam-mic / tripped decoys.
 
-Buckets: **ALERT ≥8 · REVIEW 4–7 · INFO <4.** Microsoft-signed is allowlisted to INFO — **unless** a known-bad signal (Defender hit / IOC name) is present, which always overrides the allowlist (no signed-malware bypass). Loopback/ephemeral connections are floored to benign so the report doesn't drown in churn.
+Buckets: **ALERT ≥8 · REVIEW 4–7 · INFO <4.** A verified Microsoft signature floors a finding to INFO, with three exceptions: the signer must be Microsoft's own (not the *Hardware Compatibility Publisher* that signs third-party drivers); the entry must run only itself (a script host such as PowerShell, cmd or rundll32 given arguments, or a launch string reaching into temp/AppData, is not floored); and a known-bad signal (Defender hit / IOC name / tripped decoy) always overrides the floor (no signed-malware bypass). A new persistence entry (autostart, service, task, driver) scores +4, so it reaches REVIEW on its own; a new process or connection scores +3. Loopback/ephemeral connections are floored to benign so the report doesn't drown in churn.
+
+---
+
+## If you think someone is watching you
+
+Your safety matters more than any scan result. Software that watches you can also show the person behind it that you scanned, searched for help, or removed something, and removing it can make things more dangerous.
+
+- **Document first, remove later.** Keep the report (`runs\last_scan.html` and `.json`), take photos of what you find, and note the dates. Do not delete anything until you have a plan.
+- **Plan from a device they have never had access to**, such as a trusted friend's phone or a library computer.
+- **Get help.** The [Coalition Against Stalkerware](https://stopstalkerware.org/) lists support organisations by country. For example: in the US, the National Domestic Violence Hotline (1-800-799-7233); in the UK, the National Domestic Abuse Helpline (0808 2000 247). In danger, call your local emergency number.
+- **spyscan leaves traces.** It never removes anything, but its folder, its report and any decoy files can be seen by someone who uses this PC. `spyscan canary clear` removes the decoys.
 
 ---
 
@@ -71,6 +82,16 @@ start runs\last_scan.html
 - `runs\last_scan.html` — human report: verdict banner, ALERT/REVIEW table with the *evidence* for each finding + ATT&CK tag, honest-limits footer. (INFO items are counted, not listed.)
 - `runs\last_scan.json` — full machine-readable findings (all buckets) — consumed by the standalone app UI.
 
+### Already suspect this PC? Take a first look instead
+
+A baseline taken on a PC that is already being watched would record the spyware as "known-good". If you think the PC is compromised **now**, do not baseline it; run a first look:
+
+```powershell
+.\.venv\Scripts\spyscan triage      # or the app's "First look (no baseline)" button
+```
+
+It scores what is there now on absolute signals: every autostart, service, scheduled task and driver gets a signature check; one that is not proven Microsoft-signed scores +2, and climbs to REVIEW or ALERT only with a second signal (unsigned, runs from temp/AppData, a script host such as PowerShell or rundll32 launching a payload from a user folder or the web, a known-bad indicator). A signed vendor tool alone stays INFO. It never writes `baseline.db`. Expect more to review than a baseline scan, and read the [safety notes](#if-you-think-someone-is-watching-you) first.
+
 ### Standalone app
 
 Same engine, in a native window — no terminal needed.
@@ -91,6 +112,8 @@ Same engine, in a native window — no terminal needed.
 
 A one-file build is also supported (`$env:SPYSCAN_ONEFILE=1; .\.venv\Scripts\pyinstaller spyscan.spec --noconfirm` → `dist\SpyScan.exe`); the one-folder build starts faster and is the recommended ship.
 
+**Releases** are built by `.github/workflows/release.yml` on GitHub's Windows runner, from the tagged commit only (pushing a tag like `v0.1.1` that matches `pyproject.toml`). It runs the tests, builds both forms, checks the bundled allowlist is the repo's, writes `SHA256SUMS`, records signed build provenance, and opens a **draft** release for a maintainer to publish. To check a download came from that workflow: `gh attestation verify SpyScan.exe --repo NAJEMWEHBE/spyscan`.
+
 The window opens via a native [pywebview](https://pywebview.flowrt.dev/) WebView2 frame (it falls back to your default browser if that runtime is missing). It shows:
 
 - a **Scan now** button and a **Set baseline (trusted machine)** button,
@@ -99,7 +122,18 @@ The window opens via a native [pywebview](https://pywebview.flowrt.dev/) WebView
 
 The packaged app keeps its writable state (`baseline.db`, `runs\`) **next to the executable**, while the bundled read-only resources are served from inside the build. The local server binds `127.0.0.1` only; set `SPYSCAN_PORT` to pin a fixed port (otherwise a free one is chosen and written to `spyscan_url.txt` next to the exe).
 
-**Reading results:** ALERT = look now. REVIEW = worth a glance. A finding shows *why* it scored (e.g. `+3 new since baseline, +2 unsigned, +3 runs from temp`). You decide — the tool surfaces, it does not convict. Build an allowlist for your known-good software to quiet recurring benign hits (e.g. your own dev interpreters).
+**Reading results:** ALERT = look now. REVIEW = worth a glance. A finding shows *why* it scored (e.g. `+4 new persistence entry since baseline, +2 unsigned / unverified binary, +3 runs from temp/appdata`). You decide — the tool surfaces, it does not convict. Build an allowlist for your known-good software to quiet recurring benign hits (e.g. your own dev interpreters).
+
+### Canary tripwires (decoy files)
+
+```powershell
+spyscan canary deploy        # plant decoy files (Desktop, Documents, app canaries\)
+spyscan canary status        # which decoys were touched (exit code 1 if any)
+spyscan canary audit-setup   # print the admin commands that let a scan see a READ
+spyscan canary clear         # remove every decoy and the state file
+```
+
+Out of the box a decoy trips when it is **changed, moved or deleted**: its content hash, size or modified time differ from what was planted. A program that only **reads or copies** a decoy (the actual theft) changes none of those, and Windows does not keep last-access times by default, so **a read alone is not seen until you turn on access auditing**. `spyscan canary audit-setup` prints the commands for that; it never runs them. Run them once in an elevated PowerShell, and again after each new `deploy`. From then on a read, copy or edit by any other program is logged as Security event 4663, and the next scan raises an ALERT naming that program. spyscan's own check, Microsoft Defender and Windows Search are ignored (by exact name, inside their real install folders only). Reading the Security log needs admin, so run the scan elevated to see reads. Cloud sync tools (OneDrive, Dropbox) read new files too and show up by name.
 
 ### Allowlisting your own software
 
@@ -194,7 +228,7 @@ expect those to appear from two sources.
 ## Tests
 
 ```powershell
-.\.venv\Scripts\python -m pytest -q   # 263 passing
+.\.venv\Scripts\python -m pytest -q   # integration tests (real OS) are skipped by default
 ```
 Pure logic (schema, diff, score, parsers) is fixture-unit-tested; OS-touching collectors are integration-marked.
 

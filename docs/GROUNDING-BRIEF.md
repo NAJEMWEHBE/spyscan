@@ -106,7 +106,7 @@ Velociraptor `Windows.Detection.Keylogger` reads Win32k ETW (`{8c416c79-d49b-4f0
 
 ## 3. Build-on-this — OSS tools/libraries to leverage
 
-**License lens (Nino wants MIT-friendly shippable code):**
+**License lens (the maintainer wants MIT-friendly shippable code):**
 - **Bundle/link freely (permissive):** psutil, pywin32, WMI (BSD/permissive); YARA/YARA-X/yara-python (BSD-3); osquery (**pick Apache-2.0** of its Apache-2.0/GPLv2 dual); Zeek (BSD-3); Sigma rules + signature-base (DRL 1.1); pySigma/sigma-cli (BSD).
 - **Use as separate process / standalone only (copyleft):** ClamAV/libclamav (GPLv2), tshark/Wireshark (GPLv2+), Suricata (GPLv2), Wazuh/OSSEC (GPLv2), rkhunter/chkrootkit (GPL), Loki (GPLv3), **scapy (GPLv2 — the one outlier; keep out of MIT core)**, **Velociraptor (AGPLv3 — strictest, do NOT embed)**.
 - **Detect-and-invoke a user-installed copy, NEVER redistribute (proprietary-free):** all Sysinternals (autorunsc, Sigcheck, Sysmon, Process Explorer, Handle, TCPView), Windows Defender MpCmdRun, THOR Lite, GMER.

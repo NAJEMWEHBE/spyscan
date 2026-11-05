@@ -32,7 +32,7 @@ from __future__ import annotations
 import csv, io, os
 from spyscan import powershell
 from spyscan.facts import Fact, make_key
-from spyscan.collectors.base import Collector, ScanContext, is_tempish
+from spyscan.collectors.base import Collector, ScanContext, exe_from_command, is_tempish
 from spyscan.collectors.autoruns import autorunsc_available
 
 name = "autostart_native"
@@ -72,26 +72,8 @@ _VIEWS_BY_SCOPE = {"HKLM": ("native", "wow64"), "HKCU": ("native",)}
 
 # --------------------------------------------------------------------------- helpers
 
-def _exe_from_command(cmd: str) -> str:
-    """Best-effort image path out of a launch command.
-
-    ``"C:\\Program Files\\App\\a.exe" -x`` -> ``C:\\Program Files\\App\\a.exe``
-    ``C:\\Windows\\system32\\userinit.exe,`` -> ``C:\\Windows\\system32\\userinit.exe``
-    ``rundll32.exe foo,Bar``                 -> ``rundll32.exe``
-    Returns "" for an empty command. Never raises.
-    """
-    c = (cmd or "").strip()
-    if not c:
-        return ""
-    if c[0] == '"':
-        end = c.find('"', 1)
-        return c[1:end] if end > 0 else c[1:]
-    low = c.lower()
-    idx = low.find(".exe")
-    if idx != -1:
-        return c[:idx + 4]
-    parts = c.split()
-    return parts[0] if parts else c
+# shared with the pipeline (service/task command lines): collectors.base
+_exe_from_command = exe_from_command
 
 
 # --------------------------------------------------------------------------- gather (impure)
