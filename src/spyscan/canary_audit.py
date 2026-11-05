@@ -17,16 +17,22 @@ and reading the Security log needs admin. So this layer DEGRADES GRACEFULLY:
     cleared, tool missing). It never raises and never crashes the scan.
 
 Without admin + SACL the canary still works -- it falls back to the
-hash/mtime/size/missing detection in ``canary.check`` (still strong; that catches
-any MODIFY/COPY-with-touch/DELETE). This module only ADDS attribution when the OS
-happens to be auditing. ``enable_audit_commands`` prints the exact admin commands
-the user can run to turn real per-access attribution on (it does NOT elevate).
+hash/mtime/size/missing detection in ``canary.check`` (that catches any
+MODIFY/DELETE/MOVE, but NOT a pure read or copy). With auditing on, this module
+is what sees a READ: ``is_foreign_access`` decides which 4663 events count, and
+the canary collector trips an unchanged decoy on one (audit #9).
+``enable_audit_commands`` prints the exact admin commands the user can run to turn
+auditing on (``spyscan canary audit-setup`` / the app's "Catch reads too"); it
+does NOT elevate or run anything.
 
 LOCAL-ONLY: everything reads the on-box Security log; nothing leaves the machine.
 """
 from __future__ import annotations
+import os
 import re
+import sys
 import xml.etree.ElementTree as ET
+from datetime import datetime, timezone
 
 EVENT_ID = 4663
 
@@ -168,7 +174,7 @@ def _wevtutil_runner(paths, since) -> str:
     # (keeping the query simple + robust across locales). /e:Events wraps output.
     query = f"*[System[(EventID={EVENT_ID})]]"
     cmd = ["wevtutil", "qe", "Security", "/q:" + query,
-           "/f:RenderedXml", "/c:200", "/rd:true", "/e:Events"]
+           "/f:RenderedXml", "/c:1000", "/rd:true", "/e:Events"]
     try:
         cp = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
     except Exception:
@@ -202,30 +208,130 @@ def ps_single_quoted(value: str) -> str:
     return "'" + "".join(c + c if c in _PS_SINGLE_QUOTES else c for c in str(value)) + "'"
 
 
+# "Audit File System" by GUID: auditpol subcategory NAMES are localized, so
+# /subcategory:"File System" fails on Arabic, French or German Windows (audit #9).
+FILE_SYSTEM_SUBCATEGORY = "{0CCE921D-69AE-11D9-BED3-505054503030}"
+# Everyone by SID: the account NAME is localized too ("Tout le monde", ...).
+EVERYONE_SID = "S-1-1-0"
+
+
 def enable_audit_commands(paths) -> str:
     """Return (do NOT run) the exact admin commands that turn on real per-access
     attribution for the given canary files. Pure string builder -- never elevates.
     Paths are quoted with ps_single_quoted: a decoy name is not trusted text.
     """
     lines = [
-        "# Run these in an ELEVATED PowerShell (Admin) to enable per-access",
-        "# attribution for canary files. spyscan will NOT do this for you.",
+        "# Run these in an ELEVATED PowerShell (Admin) so spyscan can see when a",
+        "# decoy is only READ or copied. spyscan will NOT do this for you.",
         "",
         "# 1) Turn on File System object-access auditing (success+failure):",
-        'auditpol /set /subcategory:"File System" /success:enable /failure:enable',
+        f'auditpol /set "/subcategory:{FILE_SYSTEM_SUBCATEGORY}" '
+        "/success:enable /failure:enable",
         "",
         "# 2) Add an audit SACL to each canary so Windows logs reads/writes:",
     ]
     for p in paths:
+        # -Audit loads the existing SACL, so Set-Acl keeps any entries already there
         lines.append(
-            "$acl = Get-Acl -LiteralPath " + ps_single_quoted(p) + ";")
+            "$acl = Get-Acl -LiteralPath " + ps_single_quoted(p) + " -Audit;")
         lines.append(
             "$rule = New-Object System.Security.AccessControl.FileSystemAuditRule("
-            "'Everyone','ReadData,WriteData,Delete','Success');")
+            f"(New-Object System.Security.Principal.SecurityIdentifier('{EVERYONE_SID}')),"
+            "'ReadData,WriteData,AppendData,Delete','Success');")
         lines.append("$acl.AddAuditRule($rule);")
         lines.append("Set-Acl -LiteralPath " + ps_single_quoted(p) + " -AclObject $acl;")
         lines.append("")
-    lines.append("# (icacls can also set audit ACEs; Set-Acl shown for clarity.)")
-    lines.append("# After this, a canary read/modify shows up as Event ID 4663 with")
-    lines.append("# the snooping process name -- spyscan surfaces it automatically.")
+    lines.append("# After this, a decoy read, copy or edit shows up as Event ID 4663")
+    lines.append("# naming the program, and the next spyscan scan raises an ALERT.")
+    lines.append("# Re-run this after every 'spyscan canary deploy' (new decoys).")
+    lines.append("# Cloud sync and backup tools (OneDrive, Dropbox...) also read new")
+    lines.append("# files; their reads show up as trips naming that program.")
     return "\n".join(lines)
+
+
+# --- deciding whether an access event is a trip (audit #9) -----------------------
+
+# Access bits that mean the CONTENT was touched: ReadData, WriteData, AppendData,
+# DELETE. An attribute-only access (0x80 ReadAttributes, e.g. a folder listing)
+# is not a trip.
+_CONTENT_ACCESS = 0x1 | 0x2 | 0x4 | 0x10000
+
+# Programs that read new files on their own, by EXACT name inside their real
+# install folder. A same-named copy anywhere else (an implant posing as
+# MsMpEng.exe in AppData) still trips.
+_SYSTEM_READERS = {
+    "msmpeng.exe": ("defender",),
+    "mpdefendercoreservice.exe": ("defender",),
+    "nissrv.exe": ("defender",),
+    "searchprotocolhost.exe": ("system32",),
+    "searchindexer.exe": ("system32",),
+    "searchfilterhost.exe": ("system32",),
+}
+
+
+def _norm(p: str) -> str:
+    return os.path.normcase(os.path.normpath(p)) if p else ""
+
+
+def _reader_dirs() -> dict[str, tuple[str, ...]]:
+    windir = os.environ.get("SystemRoot") or r"C:\Windows"
+    progdata = os.environ.get("ProgramData") or r"C:\ProgramData"
+    progfiles = os.environ.get("ProgramFiles") or r"C:\Program Files"
+    return {
+        "system32": (_norm(os.path.join(windir, "System32")),),
+        "defender": (_norm(os.path.join(progdata, "Microsoft", "Windows Defender", "Platform")),
+                     _norm(os.path.join(progfiles, "Windows Defender"))),
+    }
+
+
+def own_images() -> set[str]:
+    """spyscan's own process image(s). check() hashes every decoy, so with
+    auditing on, every scan logs a 4663 by spyscan itself. In a venv the
+    Scripts\\python.exe launcher starts the base interpreter, which is the
+    process Windows names, so both are listed."""
+    found = {sys.executable, getattr(sys, "_base_executable", "") or ""}
+    return {_norm(p) for p in found if p}
+
+
+def _is_system_reader(proc: str) -> bool:
+    name = os.path.basename(proc)
+    kinds = _SYSTEM_READERS.get(name)
+    if not kinds:
+        return False
+    parent = os.path.dirname(proc)
+    dirs = _reader_dirs()
+    for kind in kinds:
+        for root in dirs[kind]:
+            if parent == root or parent.startswith(root + os.sep):
+                return True
+    return False
+
+
+def event_epoch(when: str) -> float | None:
+    """Epoch seconds of a 4663 SystemTime ('2027-01-15T09:00:00.1234567Z'), or None."""
+    try:
+        dt = datetime.strptime((when or "").strip()[:19], "%Y-%m-%dT%H:%M:%S")
+    except ValueError:
+        return None
+    return dt.replace(tzinfo=timezone.utc).timestamp()
+
+
+def is_foreign_access(event: dict, planted_at: float | None = None) -> bool:
+    """True when a 4663 on a decoy counts as a trip: another program touched
+    the content after the decoy was planted. Unknown time or mask counts (the
+    event cannot be proven harmless); spyscan itself and the system readers above
+    do not."""
+    proc = _norm(event.get("process_name") or "")
+    if not proc or proc in own_images() or _is_system_reader(proc):
+        return False
+    mask = (event.get("access_mask") or "").strip()
+    if mask:
+        try:
+            if not int(mask, 16) & _CONTENT_ACCESS:
+                return False
+        except ValueError:
+            pass
+    when = event_epoch(event.get("time") or "")
+    if planted_at is not None and when is not None and when < float(planted_at) - 2:
+        return False
+    return True

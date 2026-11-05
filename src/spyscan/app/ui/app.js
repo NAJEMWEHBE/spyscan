@@ -93,10 +93,13 @@ async function refreshCanary() {
     list.hidden = true; list.innerHTML = "";
     meta.textContent = "";
     clearBtn.disabled = true;
+    $("canaryAuditBtn").disabled = true;
+    $("canaryAudit").hidden = true;
     return;
   }
 
   clearBtn.disabled = false;
+  $("canaryAuditBtn").disabled = false;
   const n = d.canaries.length;
   if (d.tripped > 0) {
     $("canaryStatus").innerHTML =
@@ -114,7 +117,8 @@ async function refreshCanary() {
     const li = document.createElement("li");
     li.className = c.tripped ? "trip" : "ok";
     const mark = c.tripped ? "TRIPPED" : TICK;
-    const why = c.tripped ? " - " + esc((c.reasons || []).join(", ")) : "";
+    const who = (c.accessed_by || []).length ? " (accessed by " + esc(c.accessed_by.join(", ")) + ")" : "";
+    const why = c.tripped ? " - " + esc((c.reasons || []).join(", ")) + who : "";
     li.innerHTML = `<span class="canary-mark">${mark}</span> ${esc(c.path)}${why}`;
     list.appendChild(li);
   }
@@ -154,6 +158,26 @@ async function doCanaryClear() {
   } catch (e) {
     btn.textContent = old; btn.disabled = false;
   }
+}
+
+async function doCanaryAudit() {
+  let d;
+  try { d = await getJSON("/api/canary/audit-setup"); }
+  catch (e) { $("canaryStatus").textContent = "Could not reach the local service."; return; }
+  if (!d.deployed) { $("canaryAudit").hidden = true; return; }
+  $("canaryAuditCmds").textContent = d.commands;
+  $("canaryAudit").hidden = false;
+}
+
+async function doCanaryAuditCopy() {
+  const btn = $("canaryAuditCopyBtn");
+  try {
+    await navigator.clipboard.writeText($("canaryAuditCmds").textContent);
+    btn.textContent = "Copied";
+  } catch (e) {
+    btn.textContent = "Select the text and copy it";
+  }
+  setTimeout(() => { btn.textContent = "Copy commands"; }, 2000);
 }
 
 /* ---------- verdict ---------- */
@@ -272,6 +296,8 @@ reportBtn.addEventListener("click", () =>
   window.open("/api/report?t=" + encodeURIComponent(sessionToken()), "_blank"));
 $("canaryDeployBtn").addEventListener("click", doCanaryDeploy);
 $("canaryClearBtn").addEventListener("click", doCanaryClear);
+$("canaryAuditBtn").addEventListener("click", doCanaryAudit);
+$("canaryAuditCopyBtn").addEventListener("click", doCanaryAuditCopy);
 
 refreshStatus();
 refreshCanary();

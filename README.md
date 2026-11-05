@@ -19,7 +19,7 @@ Snapshots a known-good machine, then on later scans flags what is **NEW / suspic
 | `consentstore` | **webcam/mic in use right now** (registry `LastUsedTimeStop=0`) | T1125 / T1123 |
 | `services_tasks` | new services + scheduled tasks (path, run-as) | T1543.003 / T1053.005 |
 | `drivers` | loaded kernel drivers | T1014 |
-| `canary` | tripped honeyfile decoys (+8 → ALERT, never silenced) | T1530 |
+| `canary` | honeyfile decoys that were changed, moved or deleted, or **read** once access auditing is on (+8 → ALERT, never silenced; see [Canary tripwires](#canary-tripwires-decoy-files)) | T1530 |
 
 Three detection engines feed **one 0–100 score** per entity:
 1. **baseline-diff** — what changed since your clean snapshot,
@@ -100,6 +100,17 @@ The window opens via a native [pywebview](https://pywebview.flowrt.dev/) WebView
 The packaged app keeps its writable state (`baseline.db`, `runs\`) **next to the executable**, while the bundled read-only resources are served from inside the build. The local server binds `127.0.0.1` only; set `SPYSCAN_PORT` to pin a fixed port (otherwise a free one is chosen and written to `spyscan_url.txt` next to the exe).
 
 **Reading results:** ALERT = look now. REVIEW = worth a glance. A finding shows *why* it scored (e.g. `+3 new since baseline, +2 unsigned, +3 runs from temp`). You decide — the tool surfaces, it does not convict. Build an allowlist for your known-good software to quiet recurring benign hits (e.g. your own dev interpreters).
+
+### Canary tripwires (decoy files)
+
+```powershell
+spyscan canary deploy        # plant decoy files (Desktop, Documents, app canaries\)
+spyscan canary status        # which decoys were touched (exit code 1 if any)
+spyscan canary audit-setup   # print the admin commands that let a scan see a READ
+spyscan canary clear         # remove every decoy and the state file
+```
+
+Out of the box a decoy trips when it is **changed, moved or deleted**: its content hash, size or modified time differ from what was planted. A program that only **reads or copies** a decoy (the actual theft) changes none of those, and Windows does not keep last-access times by default, so **a read alone is not seen until you turn on access auditing**. `spyscan canary audit-setup` prints the commands for that; it never runs them. Run them once in an elevated PowerShell, and again after each new `deploy`. From then on a read, copy or edit by any other program is logged as Security event 4663, and the next scan raises an ALERT naming that program. spyscan's own check, Microsoft Defender and Windows Search are ignored (by exact name, inside their real install folders only). Reading the Security log needs admin, so run the scan elevated to see reads. Cloud sync tools (OneDrive, Dropbox) read new files too and show up by name.
 
 ### Allowlisting your own software
 

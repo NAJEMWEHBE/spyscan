@@ -11,9 +11,17 @@ name = "canary"
 _ATTACK = "T1530"
 
 
+READ_REASON = "decoy opened by another program (Security event 4663: read, copy or edit)"
+
+
 def gather(state_path=None, now: float | None = None) -> list[dict]:
     """Load canary_state.json (if absent -> []) and run canary.check + a
-    best-effort access audit on tripped canaries.
+    best-effort access audit on EVERY canary.
+
+    A pure read or copy leaves hash/size/mtime untouched, so the audit is the
+    only way to see it (audit #9): once ``spyscan canary audit-setup`` is done,
+    a 4663 by another program after planting trips an unchanged decoy. Without
+    admin or the SACL the audit returns [] and only tampering trips.
 
     Pure-ish: state_path/now are injectable for tests. If no canaries were ever
     deployed there is no state file, so this returns [] and the scan gains zero
@@ -26,26 +34,27 @@ def gather(state_path=None, now: float | None = None) -> list[dict]:
     if not trips:
         return []
 
-    tripped = [t for t in trips if t.get("tripped")]
-    # best-effort attribution: WHO touched the tripped decoys (4663). Returns []
-    # without admin/SACL; never raises. Keyed by accessed object path.
+    # WHO touched each decoy (4663). Returns [] without admin/SACL; never raises.
     audit_by_path: dict[str, list[dict]] = {}
-    if tripped:
-        try:
-            events = _audit.gather(paths=[t["path"] for t in tripped], since=None)
-        except Exception:
-            events = []
-        for ev in events:
-            # regroup case-insensitively: canary_audit's parser deliberately
-            # matches ObjectName case-insensitively (canary_audit.py), so the
-            # regroup here must too, or a casing mismatch silently drops the
-            # who-touched-it attribution.
-            audit_by_path.setdefault(
-                (ev.get("object_name") or "").strip().lower(), []).append(ev)
+    try:
+        events = _audit.gather(paths=[t["path"] for t in trips], since=None)
+    except Exception:
+        events = []
+    for ev in events:
+        # regroup case-insensitively: canary_audit's parser deliberately
+        # matches ObjectName case-insensitively (canary_audit.py), so the
+        # regroup here must too, or a casing mismatch silently drops the
+        # who-touched-it attribution.
+        audit_by_path.setdefault(
+            (ev.get("object_name") or "").strip().lower(), []).append(ev)
 
     rows = []
     for t in trips:
-        ev = audit_by_path.get((t.get("path") or "").strip().lower(), [])
+        ev = [e for e in audit_by_path.get((t.get("path") or "").strip().lower(), [])
+              if _audit.is_foreign_access(e, planted_at=t.get("planted_at"))]
+        if ev and not t.get("tripped"):
+            others = [r for r in t.get("reasons", []) if r != "unchanged"]
+            t = {**t, "tripped": True, "reasons": [READ_REASON] + others}
         rows.append({**t, "audit": ev})
     return rows
 

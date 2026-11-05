@@ -237,6 +237,13 @@ def _load_state(state_path: Path) -> dict | None:
     return data
 
 
+def tracked_paths(state_path: Path | None = None) -> list[str]:
+    """Paths of every decoy the state file tracks ([] when none deployed)."""
+    state_path = Path(state_path) if state_path is not None else default_state_path()
+    data = _load_state(state_path) or {}
+    return [str(r["path"]) for r in data.get("canaries") or [] if r.get("path")]
+
+
 def check(state_path: Path | None = None, now: float = 0.0) -> list[dict]:
     """Compare each recorded canary's CURRENT fingerprint vs what was planted.
 
@@ -304,7 +311,8 @@ def check(state_path: Path | None = None, now: float = 0.0) -> list[dict]:
             evidence["atime"] = {"was": rec["atime"], "now": st.st_atime}
 
         out.append({"path": rec["path"], "tripped": tripped,
-                    "reasons": reasons or ["unchanged"], "evidence": evidence})
+                    "reasons": reasons or ["unchanged"], "evidence": evidence,
+                    "planted_at": rec.get("planted_at")})
     return out
 
 
