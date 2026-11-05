@@ -207,9 +207,8 @@ def build_findings(baseline: list[Fact], current: list[Fact],
 
     # first look (audit #18): no baseline at all -- nothing is new, nothing was
     # removed, and persistence is judged on absolute signals instead
-    d = diff_facts([] if first_look else baseline, current)
-    if first_look:
-        d = {"added": [], "changed": [], "removed": []}
+    d = ({"added": [], "changed": [], "removed": []} if first_look
+         else diff_facts(baseline, current))
     new_keys = {f.entity_key for f in d["added"]} | {f.entity_key for f in d["changed"]}
     base_by_key = {} if first_look else {f.entity_key: f for f in baseline}
 
@@ -346,9 +345,10 @@ def build_findings(baseline: list[Fact], current: list[Fact],
     for name in sorted(dns.names if dns is not None else ()):
         if name in explained or not ioc.match_domain(name):
             continue
+        key = make_key("dnscache", name)
         a = {"name": name, "ioc_dns_hit": True}
-        hit = Fact("dnscache", make_key("dnscache", name), "dns_lookup",
-                   f"DNS lookup: {name}", a, "T1071")
+        _apply_allowlist(a, key, allowlist)        # an entity_keys rule can quiet it
+        hit = Fact("dnscache", key, "dns_lookup", f"DNS lookup: {name}", a, "T1071")
         r = score_fact(hit)
         findings.append(Finding(fact=hit, score=r["score"], bucket=r["bucket"],
                                 reasons=r["reasons"], attack_id="T1071"))
