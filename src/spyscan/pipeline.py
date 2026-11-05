@@ -1,12 +1,13 @@
 # src/spyscan/pipeline.py
 from __future__ import annotations
 from pathlib import Path
-from spyscan.facts import Fact, image_path_of
+from spyscan.facts import Fact, image_path_of, make_key
+from spyscan.collectors.base import exe_from_command
 from spyscan.finding import Finding
 from spyscan.diff import diff_facts
 from spyscan.score import score_fact, no_resolvable_parent
 from spyscan.rules.ioc import IOCMatcher
-from spyscan.allowlist import Allowlist
+from spyscan.allowlist import Allowlist, script_host_args
 from spyscan.enrich import signature as _signature
 from spyscan.enrich import hashing as _hashing
 from spyscan.resources import bundle_dir
@@ -83,19 +84,27 @@ def _default_signer(path: str) -> dict:
 
 
 def _exe_path_for(f: Fact) -> str:
-    """Resolvable on-disk image path for a fact, or '' if none."""
+    """Resolvable on-disk image path for a fact, or '' if none.
+
+    Services and tasks hold a COMMAND LINE (PathName / Task To Run), so the
+    program is cut out of it first (audit #5)."""
+    if f.kind == "scheduled_task":
+        return exe_from_command(str(f.attrs.get("task_to_run") or ""))
+    if f.kind == "service":
+        return exe_from_command(image_path_of(f.attrs))
     return image_path_of(f.attrs)
 
 
 def _is_enrich_candidate(finding: "Finding") -> bool:
     """Cheap-signal heuristic: is this fact worth the slow per-file signer call?
 
-    A candidate is a process/autostart fact that already looks suspicious from
-    the cheap signals: score >= 3, OR runs from temp, OR no resolvable parent,
-    OR is a new fact that has a real exe path.
+    A candidate is a process or persistence fact (autostart, service, task,
+    driver -- audit #5) that already looks suspicious from the cheap signals:
+    score >= 3, OR runs from temp, OR no resolvable parent, OR is a new fact
+    that has a real exe path.
     """
     fact = finding.fact
-    if fact.kind not in ("process", "autostart"):
+    if fact.kind != "process" and fact.kind not in _PERSISTENCE_KINDS:
         return False
     a = fact.attrs
     if finding.score >= 3:
@@ -106,7 +115,33 @@ def _is_enrich_candidate(finding: "Finding") -> bool:
         return True
     if a.get("is_new") and _exe_path_for(fact):
         return True
+    if a.get("first_look") and _exe_path_for(fact):
+        return True       # first look: every persistence image gets a signature check
     return False
+
+
+# Where a script host's payload must not come from (first look, audit #18):
+# user-writable folders, a network share, a URL, inline script or base64.
+_PAYLOAD_PLACES = ("\\users\\", "\\programdata\\", "\\appdata\\", "\\temp\\",
+                   "http://", "https://", "vbscript:", "javascript:")
+_ENCODED_FLAGS = frozenset({"-e", "-ec", "-en", "-enc", "-encodedcommand"})
+
+
+def _script_payload(a: dict) -> bool:
+    """True when a script/proxy host is handed a payload from a user-writable or
+    remote place (rundll32 with a System32 DLL is not; with a ProgramData one is)."""
+    for args in script_host_args(a):
+        low = args.lower()
+        if low.startswith("\\\\") or " \\\\" in low or any(p in low for p in _PAYLOAD_PLACES):
+            return True
+        if any(t in _ENCODED_FLAGS for t in low.split()):
+            return True
+    return False
+
+
+def _under_windir(path: str) -> bool:
+    return (path or "").lower().replace("/", "\\").startswith(
+        ("c:\\windows\\", "%windir%", "%systemroot%"))
 
 
 def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
@@ -131,7 +166,8 @@ def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
 def build_findings(baseline: list[Fact], current: list[Fact],
                    ioc: IOCMatcher, *, signer=None, defender=None,
                    max_enrich: int = 50, defender_max: int = 10,
-                   log=print, allowlist=None) -> list["Finding"]:
+                   log=print, allowlist=None, dns=None,
+                   first_look: bool = False) -> list["Finding"]:
     """Mark is_new via baseline diff, enrich with IOC hits, score, then run a
     SCOPED + CAPPED signature/Defender enrichment pass over the most suspicious
     process/autostart facts and re-score just those.
@@ -157,21 +193,28 @@ def build_findings(baseline: list[Fact], current: list[Fact],
 
     IOC enrichment notes:
       * ioc_procname_hit  -- process name (or autoruns entry) vs implant-daemon list.
-      * ioc_domain_hit    -- NOTE: netconns carry remote IPs, not hostnames, so this
-                            is a best-effort IP/literal match until DNS resolution
-                            lands in Phase-2. We only test it for connection facts.
+      * ioc_domain_hit    -- netconns carry remote IPs, not hostnames, so the
+                            remote IP is mapped back to its names through ``dns``
+                            (an enrich.dnscache.DnsCache; None = no cache) and each
+                            name is tested (audit #13).
+      * dns_lookup        -- a cached lookup of a listed domain that no connection
+                            explains becomes its own finding.
     """
     if signer is None:
         signer = _default_signer
     if allowlist is None:
         allowlist = Allowlist.load(_default_allowlist_path())
 
-    d = diff_facts(baseline, current)
+    # first look (audit #18): no baseline at all -- nothing is new, nothing was
+    # removed, and persistence is judged on absolute signals instead
+    d = ({"added": [], "changed": [], "removed": []} if first_look
+         else diff_facts(baseline, current))
     new_keys = {f.entity_key for f in d["added"]} | {f.entity_key for f in d["changed"]}
-    base_by_key = {f.entity_key: f for f in baseline}
+    base_by_key = {} if first_look else {f.entity_key: f for f in baseline}
 
     # --- first pass: cheap signals only ---
     findings = []
+    explained: set[str] = set()          # IOC names already shown on a connection
     for f in current:
         a = dict(f.attrs)
         a["is_new"] = f.entity_key in new_keys
@@ -181,10 +224,17 @@ def build_findings(baseline: list[Fact], current: list[Fact],
 
         # IOC enrichment
         if a.get("remote_ip"):
-            # best-effort: netconns expose IPs not hostnames (see docstring)
-            a["ioc_domain_hit"] = ioc.match_domain(a.get("remote_ip", ""))
+            hit = _ioc_host_for(a["remote_ip"], ioc, dns)
+            a["ioc_domain_hit"] = hit is not None
+            if hit:
+                a["ioc_domain"] = hit
+                explained.add(hit)
         if f.kind in ("process", "autostart"):
             a["ioc_procname_hit"] = ioc.match_proc(_procname_for(f))
+        if first_look and f.kind in _PERSISTENCE_KINDS:
+            a["first_look"] = True
+            if _script_payload(a):
+                a["script_payload"] = True
 
         # user allowlist (floors to INFO in score_fact unless known-bad fires)
         _apply_allowlist(a, f.entity_key, allowlist, f.observed)
@@ -198,7 +248,12 @@ def build_findings(baseline: list[Fact], current: list[Fact],
 
     # --- second pass: scoped + capped signature/Defender enrichment ---
     candidates = [fd for fd in findings if _is_enrich_candidate(fd)]
-    candidates.sort(key=lambda x: x.score, reverse=True)
+    if first_look:
+        # ties: third-party images before Windows' own (nearly all Microsoft)
+        candidates.sort(key=lambda x: (x.score, not _under_windir(_exe_path_for(x.fact))),
+                        reverse=True)
+    else:
+        candidates.sort(key=lambda x: x.score, reverse=True)
     if len(candidates) > max_enrich:
         skipped = len(candidates) - max_enrich
         log(f"  [enrich] {len(candidates)} candidates, cap {max_enrich}: "
@@ -285,4 +340,29 @@ def build_findings(baseline: list[Fact], current: list[Fact],
         findings.append(Finding(fact=gone, score=r["score"], bucket=r["bucket"],
                                 reasons=r["reasons"], attack_id=rf.attack_id))
 
+    # a cached lookup of a listed domain with no connection that explains it:
+    # something on this PC resolved a known C2 domain (audit #13)
+    for name in sorted(dns.names if dns is not None else ()):
+        if name in explained or not ioc.match_domain(name):
+            continue
+        key = make_key("dnscache", name)
+        a = {"name": name, "ioc_dns_hit": True}
+        _apply_allowlist(a, key, allowlist)        # an entity_keys rule can quiet it
+        hit = Fact("dnscache", key, "dns_lookup", f"DNS lookup: {name}", a, "T1071")
+        r = score_fact(hit)
+        findings.append(Finding(fact=hit, score=r["score"], bucket=r["bucket"],
+                                reasons=r["reasons"], attack_id="T1071"))
+
     return sorted(findings, key=lambda x: x.score, reverse=True)
+
+
+def _ioc_host_for(remote_ip: str, ioc: IOCMatcher, dns) -> str | None:
+    """The listed domain a remote IP belongs to, or None. A literal IP entry
+    still matches; otherwise every cached name that resolved to it is tested."""
+    if ioc.match_domain(remote_ip):
+        return remote_ip
+    names = dns.by_ip.get(remote_ip, ()) if dns is not None else ()
+    for name in sorted(names):
+        if ioc.match_domain(name):
+            return name
+    return None

@@ -52,6 +52,14 @@ def _is_benign_remote(remote_ip: str | None) -> bool:
     return False
 
 
+# Scoring policy per kind (audit #5). A NEW persistence entry -- something that
+# will run again at every boot/logon -- is how commercial monitoring software and
+# stalkerware install, so it reaches REVIEW on its own (4). Ephemeral kinds
+# (processes, connections) churn normally and keep the lighter +3.
+_PERSISTENCE_KINDS = frozenset({"autostart", "service", "scheduled_task", "driver"})
+_NEW_PERSISTENCE_WEIGHT = 4
+
+
 def no_resolvable_parent(f: Fact) -> bool:
     """True when a process entity has no resolvable parent at all.
 
@@ -98,8 +106,18 @@ def score_fact(f: Fact) -> dict:
         return {"score": 0, "bucket": Bucket.INFO,
                 "reasons": ["benign: loopback/link-local/no remote endpoint"]}
 
+    if a.get("first_look") and f.kind in _PERSISTENCE_KINDS:
+        # first look (audit #18): no baseline, so nothing is "new"; a persistence
+        # entry not proven Microsoft-signed (those floored above) is the base
+        # signal, and only climbs to REVIEW with a second one (unsigned, temp...)
+        add(2, "persistence entry not proven Microsoft-signed (first look, no baseline)")
+    if a.get("script_payload"):
+        add(3, "script/proxy host launches a payload from a user-writable or remote place")
     if a.get("is_new"):
-        add(3, "new since baseline")
+        if f.kind in _PERSISTENCE_KINDS:
+            add(_NEW_PERSISTENCE_WEIGHT, "new persistence entry since baseline")
+        else:
+            add(3, "new since baseline")
     if a.get("signed") is False or a.get("verified") is False:
         add(2, "unsigned / unverified binary")
     if a.get("from_temp"):
@@ -111,6 +129,8 @@ def score_fact(f: Fact) -> dict:
         add(2, "no resolvable parent")
     if a.get("ioc_domain_hit"):
         add(3, "connects to known mercenary/C2 domain")
+    if a.get("ioc_dns_hit"):
+        add(5, "this PC looked up a known mercenary/C2 domain (DNS cache)")
     if a.get("ioc_procname_hit"):
         add(5, "process name matches known implant daemon")
     if a.get("in_use_now") and not a.get("trusted_ms"):

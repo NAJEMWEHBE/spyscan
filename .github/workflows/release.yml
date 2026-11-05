@@ -1,0 +1,91 @@
+name: release
+
+# Builds the Windows app FROM THE TAGGED COMMIT, so a release can never again
+# ship a local tree that differs from the tag (audit #6/#19). Runs only when a
+# maintainer pushes a tag like v0.1.1, and creates a DRAFT release: a person
+# reviews the assets and publishes it by hand.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    permissions:
+      contents: write        # create the draft release and upload assets
+      id-token: write        # sign the build provenance
+      attestations: write    # store the build provenance
+    env:
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+
+      - name: Install
+        run: pip install -e ".[dev]" "pyinstaller>=6.16,<7"
+
+      - name: Tag matches the package version
+        shell: pwsh
+        run: |
+          $m = Select-String -Path pyproject.toml -Pattern '^version = "(.+)"'
+          $v = $m.Matches[0].Groups[1].Value
+          if ("v$v" -ne $env:TAG) { throw "tag $env:TAG does not match pyproject version $v" }
+
+      - name: Tests
+        run: pytest -q
+
+      - name: Build the one-folder app and zip it
+        shell: pwsh
+        run: |
+          pyinstaller spyscan.spec --noconfirm
+          New-Item -ItemType Directory -Force release | Out-Null
+          Compress-Archive -Path dist\SpyScan -DestinationPath "release\SpyScan-$env:TAG-win64.zip"
+
+      - name: Build the one-file exe
+        shell: pwsh
+        run: |
+          $env:SPYSCAN_ONEFILE = "1"
+          pyinstaller spyscan.spec --noconfirm
+          Copy-Item dist\SpyScan.exe release\SpyScan.exe
+
+      - name: The shipped allowlist is the repo's (no dev-machine globs)
+        shell: pwsh
+        run: |
+          $shipped = Get-ChildItem -Recurse -Filter allowlist.json dist\SpyScan | Select-Object -First 1
+          if (-not $shipped) { throw "allowlist.json missing from the build" }
+          $a = Get-Content $shipped.FullName -Raw | ConvertFrom-Json
+          $b = Get-Content config\allowlist.json -Raw | ConvertFrom-Json
+          if (($a | ConvertTo-Json -Depth 5) -ne ($b | ConvertTo-Json -Depth 5)) { throw "bundled allowlist differs from config\allowlist.json" }
+
+      - name: SHA256SUMS
+        shell: pwsh
+        working-directory: release
+        run: |
+          Get-ChildItem -File | Where-Object Name -ne SHA256SUMS | Sort-Object Name |
+            ForEach-Object { "{0}  {1}" -f (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower(), $_.Name } |
+            Set-Content -Encoding ascii SHA256SUMS
+          Get-Content SHA256SUMS
+
+      - name: Build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release/SpyScan.exe
+            release/SpyScan-*-win64.zip
+
+      - name: Draft release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # pwsh does not expand wildcards for native programs: list the files
+          $files = Get-ChildItem release -File | ForEach-Object FullName
+          gh release create $env:TAG @files --draft --verify-tag --title "SpyScan $env:TAG" `
+            --notes "Built by the release workflow from $env:TAG ($env:GITHUB_SHA). Check SHA256SUMS, or verify the build provenance: gh attestation verify SpyScan.exe --repo $env:GITHUB_REPOSITORY"

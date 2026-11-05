@@ -236,6 +236,11 @@ code {
 .canary-mark { font-weight: 700; margin-right: 8px; }
 .canary-list li.trip .canary-mark { color: var(--alert); }
 #canaryStatus .trip { color: var(--alert); }
+.canary-cmds {
+  margin: 8px 0; padding: 10px; max-height: 240px; overflow: auto;
+  font-size: 11px; font-family: var(--mono); white-space: pre;
+  border: 1px solid var(--line); border-radius: 8px; color: var(--ink-dim);
+}
 
 /* ---- footer ---- */
 .foot {
