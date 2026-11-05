@@ -45,17 +45,19 @@ Your safety matters more than any scan result. Software that watches you can als
 
 ### Option A — packaged app (no Python needed)
 
-1. Download `SpyScan-v0.1.0-win64.zip` from [Releases](https://github.com/NAJEMWEHBE/spyscan/releases).
-2. Verify it against `SHA256SUMS.txt` from the same release:
+1. Download `SpyScan-v0.2.0-win64.zip` (one-folder build) or the single-file `SpyScan.exe`
+   from [Releases](https://github.com/NAJEMWEHBE/spyscan/releases).
+2. Verify it against `SHA256SUMS` from the same release (or check its build provenance with
+   `gh attestation verify SpyScan.exe --repo NAJEMWEHBE/spyscan`):
 
    ```powershell
-   Get-FileHash .\SpyScan-v0.1.0-win64.zip -Algorithm SHA256
+   Get-FileHash .\SpyScan-v0.2.0-win64.zip -Algorithm SHA256
    ```
 
-3. Unzip and run `SpyScan.exe`. The exe is currently **unsigned**, so SmartScreen will warn
+3. Unzip and run `SpyScan\SpyScan.exe` (or run the single-file `SpyScan.exe` directly). The exe is currently **unsigned**, so SmartScreen will warn
    (“More info → Run anyway”) — that is exactly why the hashes are published, and Option B
    exists if you'd rather build from source. You can also cross-check the exe on
-   [VirusTotal](https://www.virustotal.com/gui/file/a10f63d94348c61c1739e7c34db66319887e497a5071477d91e733dad06841f9);
+   [VirusTotal](https://www.virustotal.com/) (search its SHA-256);
    a few heuristic engines may flag any unsigned PyInstaller one-file exe (the
    self-extracting packaging resembles how some malware bundles itself — a known
    false-positive source).
