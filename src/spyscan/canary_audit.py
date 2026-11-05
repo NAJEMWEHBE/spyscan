@@ -190,9 +190,22 @@ def gather(paths, since=None, runner=None) -> list[dict]:
         return []
 
 
+# Every character PowerShell treats as a single quote: ASCII ' plus the
+# typographic U+2018/U+2019/U+201A/U+201B.
+_PS_SINGLE_QUOTES = "'‘’‚‛"
+
+
+def ps_single_quoted(value: str) -> str:
+    """``value`` as a PowerShell single-quoted literal. Doubles EVERY quote
+    variant (what PowerShell's own EscapeSingleQuotedStringContent does), so a
+    file name holding a curly quote cannot end the string early."""
+    return "'" + "".join(c + c if c in _PS_SINGLE_QUOTES else c for c in str(value)) + "'"
+
+
 def enable_audit_commands(paths) -> str:
     """Return (do NOT run) the exact admin commands that turn on real per-access
     attribution for the given canary files. Pure string builder -- never elevates.
+    Paths are quoted with ps_single_quoted: a decoy name is not trusted text.
     """
     lines = [
         "# Run these in an ELEVATED PowerShell (Admin) to enable per-access",
@@ -205,12 +218,12 @@ def enable_audit_commands(paths) -> str:
     ]
     for p in paths:
         lines.append(
-            "$acl = Get-Acl -Path '" + str(p) + "';")
+            "$acl = Get-Acl -LiteralPath " + ps_single_quoted(p) + ";")
         lines.append(
             "$rule = New-Object System.Security.AccessControl.FileSystemAuditRule("
             "'Everyone','ReadData,WriteData,Delete','Success');")
         lines.append("$acl.AddAuditRule($rule);")
-        lines.append("Set-Acl -Path '" + str(p) + "' -AclObject $acl;")
+        lines.append("Set-Acl -LiteralPath " + ps_single_quoted(p) + " -AclObject $acl;")
         lines.append("")
     lines.append("# (icacls can also set audit ACEs; Set-Acl shown for clarity.)")
     lines.append("# After this, a canary read/modify shows up as Event ID 4663 with")

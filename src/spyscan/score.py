@@ -124,6 +124,8 @@ def score_fact(f: Fact) -> dict:
         add(8, "canary tripwire fired (decoy file accessed/modified)")
     if a.get("hidden_flag"):
         add(1, "hidden-window flag")
+    if a.get("encoded_flag"):
+        add(1, "encoded PowerShell command (-EncodedCommand)")
     if a.get("removed_since_baseline"):
         add(3, "removed since baseline (persistence entry gone -- benign uninstall or possible implant cleanup)")
     # observed-delta signals (set by pipeline.observed_deltas): weak evidence on

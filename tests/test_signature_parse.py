@@ -22,17 +22,21 @@ def test_unsigned_is_not_verified():
 import subprocess as _sp
 from spyscan.enrich import signature as _sig
 
-def test_authenticode_timeout_is_unknown_not_unsigned(monkeypatch):
+def test_authenticode_timeout_is_unknown_not_unsigned(monkeypatch, tmp_path):
     def boom(*a, **k):
         raise _sp.TimeoutExpired(cmd="powershell", timeout=20)
-    monkeypatch.setattr(_sig.subprocess, "run", boom)
-    r = _sig.authenticode("C:/some/where.exe")
+    monkeypatch.setattr(_sp, "run", boom)
+    exe = tmp_path / "where.exe"          # a real file, so the probe really runs
+    exe.write_bytes(b"MZ")
+    r = _sig.authenticode(str(exe))
     assert r["signed"] is None and r["verified"] is None   # unknown, NOT False
     assert r["trusted_ms"] is False                        # unknown -> no MS floor
 
-def test_authenticode_error_is_unknown_not_unsigned(monkeypatch):
+def test_authenticode_error_is_unknown_not_unsigned(monkeypatch, tmp_path):
     def boom(*a, **k):
         raise OSError("powershell not found")
-    monkeypatch.setattr(_sig.subprocess, "run", boom)
-    r = _sig.authenticode("C:/some/where.exe")
+    monkeypatch.setattr(_sp, "run", boom)
+    exe = tmp_path / "where.exe"          # a real file, so the probe really runs
+    exe.write_bytes(b"MZ")
+    r = _sig.authenticode(str(exe))
     assert r["signed"] is None and r["verified"] is None
