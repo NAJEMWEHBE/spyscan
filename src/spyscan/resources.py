@@ -10,13 +10,15 @@ The app ships two kinds of paths:
 
 * **writable runtime data** -- ``baseline.db`` and the ``runs/`` reports. These
   must NOT live in ``_MEIPASS`` (a one-file build wipes it on exit and it is a
-  throwaway temp dir). They live next to the executable when frozen, or at the
-  project root in dev. ``app_base`` resolves these.
+  throwaway temp dir). They live next to the executable when frozen, at the
+  project root in a source checkout, and in ``%LOCALAPPDATA%\\spyscan`` for a
+  regular ``pip install`` (never Python's own ``Lib``). ``app_base`` resolves these.
 
 Keeping both behind one tiny module means every other module asks here instead of
 hand-rolling ``parents[...]`` walks that silently break once frozen.
 """
 from __future__ import annotations
+import os
 import sys
 from pathlib import Path
 
@@ -70,11 +72,24 @@ def bundle_dir(*parts: str) -> Path:
     return base.joinpath(*parts)
 
 
+def is_source_checkout() -> bool:
+    """True when running from a source tree (``<root>/pyproject.toml`` + ``src/``).
+
+    False for a regular (non-editable) ``pip install``: there ``_DEV_ROOT`` is
+    Python's ``Lib`` folder, which must never receive state (audit #20).
+    """
+    return (_DEV_ROOT / "pyproject.toml").is_file() and (_DEV_ROOT / "src" / "spyscan").is_dir()
+
+
 def app_base() -> Path:
     """Base dir for WRITABLE runtime data (baseline.db, runs/).
 
-    Frozen: the directory containing the executable. Dev: the project root.
+    Frozen: the directory containing the executable. Source checkout: the project
+    root. Installed package: ``%LOCALAPPDATA%\\spyscan`` (``~/.spyscan`` without it).
     """
     if is_frozen():
         return Path(sys.executable).resolve().parent
-    return _DEV_ROOT
+    if is_source_checkout():
+        return _DEV_ROOT
+    local = os.environ.get("LOCALAPPDATA")
+    return Path(local) / "spyscan" if local else Path.home() / ".spyscan"
