@@ -22,7 +22,17 @@ def cmd_scan(args):
                                   enable_defender=getattr(args, "defender", False))
     except RuntimeError:
         print("no baseline yet - run: spyscan baseline"); return 2
+    return _print_result(result)
 
+def cmd_triage(args):
+    """First look with no baseline, for a PC you already suspect (audit #18)."""
+    result = service.run_triage(collect=_collect_all,
+                                enable_defender=getattr(args, "defender", False))
+    print(f"{service.FIRST_LOOK_MODE}: scored on absolute signals; nothing is "
+          "compared to a baseline")
+    return _print_result(result)
+
+def _print_result(result):
     findings = result["findings"]
     s = result["summary"]
     print(f"findings: {s['total']}  ALERT: {s['alert']}  "
@@ -130,6 +140,11 @@ def main(argv=None):
                         help="also deep-scan the most suspicious files with Windows "
                              "Defender (MpCmdRun); slower, off by default")
     scan_p.set_defaults(func=cmd_scan)
+    triage_p = sub.add_parser(
+        "triage", help="first look with no baseline, for a PC you already suspect")
+    triage_p.add_argument("--defender", action="store_true",
+                          help="also deep-scan the most suspicious files with Defender")
+    triage_p.set_defaults(func=cmd_triage)
     sub.add_parser("allowlist").set_defaults(func=cmd_allowlist)
     sub.add_parser("app").set_defaults(func=cmd_app)
 

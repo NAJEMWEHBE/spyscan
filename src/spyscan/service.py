@@ -196,6 +196,15 @@ def run_scan(root: Path | None = None, db: Path | None = None, *,
     if not base:
         raise RuntimeError("no baseline yet - run a baseline first")
 
+    current, kw = _scan_inputs(root, collect, log, enable_defender, ind,
+                               allowlist_file, dns)
+    findings = build_findings(base, current, max_enrich=50, **kw)
+    return _write_reports(root, findings, {})
+
+
+def _scan_inputs(root, collect, log, enable_defender, ind, allowlist_file, dns):
+    """Collect, then load everything build_findings needs (shared by scan and
+    first look). Returns (current facts, build_findings keyword args)."""
     ctx = ScanContext(root=root, now=time.time())
     current = collect(ctx) if collect is not None else collect_all(ctx, log=log)
     ioc = IOCMatcher.from_dir(ind if ind is not None else indicators_dir(root))
@@ -209,12 +218,33 @@ def run_scan(root: Path | None = None, db: Path | None = None, *,
     # of the most-suspicious files it actually scans (defender_max).
     # The DNS cache maps remote IPs back to names for the domain IOC list (#13).
     cache = dns() if dns is not None else _live_dns()
-    findings = build_findings(base, current, ioc, max_enrich=50,
-                              defender=_defender.scan_file if enable_defender else None,
-                              allowlist=allowlist, log=log, dns=cache)
+    return current, {"ioc": ioc, "allowlist": allowlist, "log": log, "dns": cache,
+                     "defender": _defender.scan_file if enable_defender else None}
 
+
+FIRST_LOOK_MODE = "first look (no baseline)"
+
+
+def run_triage(root: Path | None = None, *, collect=None, log=print,
+               enable_defender: bool = False, ind: Path | None = None,
+               allowlist_file: Path | None = None, dns=None) -> dict:
+    """First look (audit #18): score THIS machine's current state on absolute
+    signals, with no baseline. For a PC the user already suspects, where taking
+    a baseline would absorb the implant as "trusted". Same return shape and
+    report files as run_scan, with meta["mode"] set; never touches baseline.db.
+    """
+    root = _root(root)
+    current, kw = _scan_inputs(root, collect, log, enable_defender, ind,
+                               allowlist_file, dns)
+    # every persistence image is a signature candidate here, so the cap is higher
+    findings = build_findings([], current, max_enrich=150, first_look=True, **kw)
+    return _write_reports(root, findings, {"mode": FIRST_LOOK_MODE})
+
+
+def _write_reports(root: Path, findings: list[Finding], extra_meta: dict) -> dict:
     meta = {"host": socket.gethostname(),
-            "when": datetime.now(timezone.utc).isoformat(timespec="seconds")}
+            "when": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            **extra_meta}
 
     runs = runs_dir(root)
     runs.mkdir(exist_ok=True)

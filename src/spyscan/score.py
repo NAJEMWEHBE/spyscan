@@ -106,6 +106,13 @@ def score_fact(f: Fact) -> dict:
         return {"score": 0, "bucket": Bucket.INFO,
                 "reasons": ["benign: loopback/link-local/no remote endpoint"]}
 
+    if a.get("first_look") and f.kind in _PERSISTENCE_KINDS:
+        # first look (audit #18): no baseline, so nothing is "new"; a persistence
+        # entry not proven Microsoft-signed (those floored above) is the base
+        # signal, and only climbs to REVIEW with a second one (unsigned, temp...)
+        add(2, "persistence entry not proven Microsoft-signed (first look, no baseline)")
+    if a.get("script_payload"):
+        add(3, "script/proxy host launches a payload from a user-writable or remote place")
     if a.get("is_new"):
         if f.kind in _PERSISTENCE_KINDS:
             add(_NEW_PERSISTENCE_WEIGHT, "new persistence entry since baseline")
