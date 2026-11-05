@@ -57,7 +57,9 @@ def render_html(findings: list[Finding], meta: dict) -> str:
 
     return (f"<!doctype html><meta charset=utf-8><style>{_CSS}</style>"
             f"<h1>spyscan report</h1><div>{escape(str(meta.get('host', '')))} - "
-            f"{escape(str(meta.get('when', '')))}</div>"
+            f"{escape(str(meta.get('when', '')))}"
+            + (f" - <b>{escape(str(meta['mode']))}</b>" if meta.get("mode") else "")
+            + "</div>"
             f"<div class='v {vb}'>{vb}: {escape(vmsg)}</div>"
             f"{table}{info_note}"
             f"<p class='foot'>{foot}</p>")

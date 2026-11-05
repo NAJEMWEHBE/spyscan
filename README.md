@@ -71,6 +71,16 @@ start runs\last_scan.html
 - `runs\last_scan.html` — human report: verdict banner, ALERT/REVIEW table with the *evidence* for each finding + ATT&CK tag, honest-limits footer. (INFO items are counted, not listed.)
 - `runs\last_scan.json` — full machine-readable findings (all buckets) — consumed by the standalone app UI.
 
+### Already suspect this PC? Take a first look instead
+
+A baseline taken on a PC that is already being watched would record the spyware as "known-good". If you think the PC is compromised **now**, do not baseline it; run a first look:
+
+```powershell
+.\.venv\Scripts\spyscan triage      # or the app's "First look (no baseline)" button
+```
+
+It scores what is there now on absolute signals: every autostart, service, scheduled task and driver gets a signature check; one that is not proven Microsoft-signed scores +2, and climbs to REVIEW or ALERT only with a second signal (unsigned, runs from temp/AppData, a script host such as PowerShell or rundll32 launching a payload from a user folder or the web, a known-bad indicator). A signed vendor tool alone stays INFO. It never writes `baseline.db`. Expect more to review than a baseline scan, and read the [safety notes](#if-you-think-someone-is-watching-you) first.
+
 ### Standalone app
 
 Same engine, in a native window — no terminal needed.

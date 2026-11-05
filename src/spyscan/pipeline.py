@@ -7,7 +7,7 @@ from spyscan.finding import Finding
 from spyscan.diff import diff_facts
 from spyscan.score import score_fact, no_resolvable_parent
 from spyscan.rules.ioc import IOCMatcher
-from spyscan.allowlist import Allowlist
+from spyscan.allowlist import Allowlist, script_host_args
 from spyscan.enrich import signature as _signature
 from spyscan.enrich import hashing as _hashing
 from spyscan.resources import bundle_dir
@@ -115,7 +115,33 @@ def _is_enrich_candidate(finding: "Finding") -> bool:
         return True
     if a.get("is_new") and _exe_path_for(fact):
         return True
+    if a.get("first_look") and _exe_path_for(fact):
+        return True       # first look: every persistence image gets a signature check
     return False
+
+
+# Where a script host's payload must not come from (first look, audit #18):
+# user-writable folders, a network share, a URL, inline script or base64.
+_PAYLOAD_PLACES = ("\\users\\", "\\programdata\\", "\\appdata\\", "\\temp\\",
+                   "http://", "https://", "vbscript:", "javascript:")
+_ENCODED_FLAGS = frozenset({"-e", "-ec", "-en", "-enc", "-encodedcommand"})
+
+
+def _script_payload(a: dict) -> bool:
+    """True when a script/proxy host is handed a payload from a user-writable or
+    remote place (rundll32 with a System32 DLL is not; with a ProgramData one is)."""
+    for args in script_host_args(a):
+        low = args.lower()
+        if low.startswith("\\\\") or " \\\\" in low or any(p in low for p in _PAYLOAD_PLACES):
+            return True
+        if any(t in _ENCODED_FLAGS for t in low.split()):
+            return True
+    return False
+
+
+def _under_windir(path: str) -> bool:
+    return (path or "").lower().replace("/", "\\").startswith(
+        ("c:\\windows\\", "%windir%", "%systemroot%"))
 
 
 def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
@@ -140,7 +166,8 @@ def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
 def build_findings(baseline: list[Fact], current: list[Fact],
                    ioc: IOCMatcher, *, signer=None, defender=None,
                    max_enrich: int = 50, defender_max: int = 10,
-                   log=print, allowlist=None, dns=None) -> list["Finding"]:
+                   log=print, allowlist=None, dns=None,
+                   first_look: bool = False) -> list["Finding"]:
     """Mark is_new via baseline diff, enrich with IOC hits, score, then run a
     SCOPED + CAPPED signature/Defender enrichment pass over the most suspicious
     process/autostart facts and re-score just those.
@@ -178,9 +205,13 @@ def build_findings(baseline: list[Fact], current: list[Fact],
     if allowlist is None:
         allowlist = Allowlist.load(_default_allowlist_path())
 
-    d = diff_facts(baseline, current)
+    # first look (audit #18): no baseline at all -- nothing is new, nothing was
+    # removed, and persistence is judged on absolute signals instead
+    d = diff_facts([] if first_look else baseline, current)
+    if first_look:
+        d = {"added": [], "changed": [], "removed": []}
     new_keys = {f.entity_key for f in d["added"]} | {f.entity_key for f in d["changed"]}
-    base_by_key = {f.entity_key: f for f in baseline}
+    base_by_key = {} if first_look else {f.entity_key: f for f in baseline}
 
     # --- first pass: cheap signals only ---
     findings = []
@@ -201,6 +232,10 @@ def build_findings(baseline: list[Fact], current: list[Fact],
                 explained.add(hit)
         if f.kind in ("process", "autostart"):
             a["ioc_procname_hit"] = ioc.match_proc(_procname_for(f))
+        if first_look and f.kind in _PERSISTENCE_KINDS:
+            a["first_look"] = True
+            if _script_payload(a):
+                a["script_payload"] = True
 
         # user allowlist (floors to INFO in score_fact unless known-bad fires)
         _apply_allowlist(a, f.entity_key, allowlist, f.observed)
@@ -214,7 +249,12 @@ def build_findings(baseline: list[Fact], current: list[Fact],
 
     # --- second pass: scoped + capped signature/Defender enrichment ---
     candidates = [fd for fd in findings if _is_enrich_candidate(fd)]
-    candidates.sort(key=lambda x: x.score, reverse=True)
+    if first_look:
+        # ties: third-party images before Windows' own (nearly all Microsoft)
+        candidates.sort(key=lambda x: (x.score, not _under_windir(_exe_path_for(x.fact))),
+                        reverse=True)
+    else:
+        candidates.sort(key=lambda x: x.score, reverse=True)
     if len(candidates) > max_enrich:
         skipped = len(candidates) - max_enrich
         log(f"  [enrich] {len(candidates)} candidates, cap {max_enrich}: "

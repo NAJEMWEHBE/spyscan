@@ -163,6 +163,21 @@ def create_app(root: Path | None = None, db: Path | None = None,
             "report_json_path": result["report_json_path"],
         })
 
+    @app.post("/api/triage")
+    def api_triage():
+        # first look with no baseline (audit #18); never touches baseline.db
+        enable_defender = (request.args.get("defender") or "").lower() in ("1", "true", "on")
+        result = service.run_triage(root, enable_defender=enable_defender)
+        shown = [f for f in result["findings"] if f.is_actionable()]
+        return jsonify({
+            "ok": True,
+            "meta": result["meta"],
+            "summary": result["summary"],
+            "findings": [f.to_dict() for f in shown],
+            "report_html_path": result["report_html_path"],
+            "report_json_path": result["report_json_path"],
+        })
+
     @app.get("/api/report")
     def api_report():
         # serve the latest raw HTML report

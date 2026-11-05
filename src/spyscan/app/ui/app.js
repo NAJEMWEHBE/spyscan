@@ -235,6 +235,7 @@ function renderFindings(findings, summary) {
 
 function setScanning(on) {
   scanBtn.disabled = on;
+  $("triageBtn").disabled = on;
   spinner.hidden = !on;
   btnLabel.textContent = on ? "Scanning..." : "Scan now";
   scanHint.textContent = on
@@ -242,12 +243,12 @@ function setScanning(on) {
     : "A full scan takes about 30-40 seconds.";
 }
 
-async function doScan() {
+async function doScan(route = "/api/scan") {
   setScanning(true);
   verdict.hidden = true;
   try {
     const withDefender = document.getElementById("defenderToggle")?.checked;
-    const { ok, status, data } = await postJSON("/api/scan" + (withDefender ? "?defender=1" : ""));
+    const { ok, status, data } = await postJSON(route + (withDefender ? "?defender=1" : ""));
     if (!ok || data.ok === false) {
       const msg = data && data.error ? data.error : `scan failed (HTTP ${status})`;
       scanHint.textContent = msg.includes("baseline")
@@ -260,7 +261,9 @@ async function doScan() {
     renderFindings(data.findings || [], data.summary);
     reportBtn.disabled = false;
     setScanning(false);
-    scanHint.textContent = "Done. Full detail in the HTML report.";
+    scanHint.textContent = data.meta && data.meta.mode
+      ? "Done (" + data.meta.mode + "). Full detail in the HTML report."
+      : "Done. Full detail in the HTML report.";
   } catch (e) {
     setScanning(false);
     scanHint.textContent = "Scan failed: could not reach the local service.";
@@ -284,7 +287,8 @@ async function doBaseline() {
   }
 }
 
-scanBtn.addEventListener("click", doScan);
+scanBtn.addEventListener("click", () => doScan("/api/scan"));
+$("triageBtn").addEventListener("click", () => doScan("/api/triage"));
 baselineBtn.addEventListener("click", doBaseline);
 // The report may open outside this window (no session cookie there), so the
 // link carries the per-launch token the server set at the handshake.
