@@ -16,6 +16,9 @@ class BaselineStore:
 
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
+        # an installed package's data folder (%LOCALAPPDATA%\spyscan) does not
+        # exist on a fresh install, and SQLite will not create it
+        self.db_path.parent.mkdir(parents=True, exist_ok=True)
         self._init()
 
     def _connect(self):

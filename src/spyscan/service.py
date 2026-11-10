@@ -247,7 +247,7 @@ def _write_reports(root: Path, findings: list[Finding], extra_meta: dict) -> dic
             **extra_meta}
 
     runs = runs_dir(root)
-    runs.mkdir(exist_ok=True)
+    runs.mkdir(parents=True, exist_ok=True)     # root too, on a fresh install
     html_path = runs / "last_scan.html"
     json_path = runs / "last_scan.json"
     json_path.write_text(render_json(findings, meta), encoding="utf-8")

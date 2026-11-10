@@ -149,3 +149,32 @@ def test_run_scan_counts_allowlisted(tmp_path):
     result = service.run_scan(tmp_path, db, collect=collect,
                               ind=_empty_ind(tmp_path))
     assert result["summary"]["allowlisted"] == 1
+
+
+def _fresh_install_root(tmp_path, monkeypatch, name):
+    """The data folder an installed (pip) package gets: %LOCALAPPDATA%\\spyscan,
+    which does not exist yet on a fresh install."""
+    from spyscan import resources
+    monkeypatch.setattr(resources, "is_frozen", lambda: False)
+    monkeypatch.setattr(resources, "is_source_checkout", lambda: False)
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / name))
+    root = resources.app_base()
+    assert root == tmp_path / name / "spyscan" and not root.exists()
+    monkeypatch.setattr(service, "ROOT", root)
+    return root
+
+
+def test_fresh_install_baseline_then_scan_create_the_data_folder(tmp_path, monkeypatch):
+    root = _fresh_install_root(tmp_path, monkeypatch, "fresh-a")
+    n = service.run_baseline(collect=lambda ctx: [
+        Fact("processes", "processes::a::a", "process", "a", {})])
+    assert n == 1 and (root / "baseline.db").is_file()
+    result = service.run_scan(collect=lambda ctx: [], ind=_empty_ind(tmp_path))
+    assert (root / "runs" / "last_scan.json").is_file()
+    assert result["report_json_path"].endswith("last_scan.json")
+
+
+def test_fresh_install_first_look_creates_the_data_folder(tmp_path, monkeypatch):
+    root = _fresh_install_root(tmp_path, monkeypatch, "fresh-b")
+    service.run_triage(collect=lambda ctx: [], ind=_empty_ind(tmp_path))
+    assert (root / "runs" / "last_scan.html").is_file()
