@@ -177,7 +177,7 @@ def _under_windir(path: str) -> bool:
 
 
 def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
-                     observed: dict | None = None) -> None:
+                     observed: dict | None = None, kind: str = "") -> None:
     """Set a['allowlisted']/a['allowlist_reason'] in place if the fact matches a
     user allowlist rule. score_fact treats this exactly like the Microsoft floor
     (known-bad always overrides), so it can never hide real malware.
@@ -189,9 +189,15 @@ def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
     Each call decides afresh: after enrichment the floor may be refused where
     the cheap pass gave it (the verified file turned out to be a renamed script
     host). When a Microsoft-signed fact is refused, a['floor_refused'] says why,
-    so scoring can give it a true reason."""
+    so scoring can give it a true reason.
+
+    A driver's ``path`` is one file, never a command line: it is handed to the
+    floor as the parsed image, the same whole path the signature probe verified
+    (_exe_path_for), so a blank in its folder name is not read as an argument."""
     attrs = dict(a)
     attrs.setdefault("entity_key", entity_key)
+    if kind == "driver" and a.get("path"):
+        attrs.setdefault("image", str(a["path"]))
     if observed and observed.get("cmdlines"):
         attrs.setdefault("cmdlines", list(observed["cmdlines"]))
     for key in ("allowlisted", "allowlist_reason", "floor_refused"):
@@ -280,7 +286,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
                 a["script_payload"] = True
 
         # user allowlist (floors to INFO in score_fact unless known-bad fires)
-        _apply_allowlist(a, f.entity_key, allowlist, f.observed)
+        _apply_allowlist(a, f.entity_key, allowlist, f.observed, f.kind)
 
         enriched = Fact(f.collector, f.entity_key, f.kind, f.label, a, f.attack_id,
                         f.observed)
@@ -359,7 +365,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
                 defender_skipped += 1
         # re-apply the allowlist: enrichment may have resolved a signer/sha that
         # now matches a signer/hash rule (path_globs already matched in pass 1).
-        _apply_allowlist(a, fd.fact.entity_key, allowlist, fd.fact.observed)
+        _apply_allowlist(a, fd.fact.entity_key, allowlist, fd.fact.observed, fd.fact.kind)
         # re-score with the freshly-enriched attrs (interacts with FIX 1: a now-
         # signed temp app can be allowlisted; a now-flagged one escalates)
         r = score_fact(fd.fact)
@@ -381,7 +387,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
         a = dict(rf.attrs)
         a["removed_since_baseline"] = True
         a.pop("is_new", None)  # a removed entry is not "new"; drop any stale baseline flag
-        _apply_allowlist(a, rf.entity_key, allowlist, rf.observed)
+        _apply_allowlist(a, rf.entity_key, allowlist, rf.observed, rf.kind)
         gone = Fact(rf.collector, rf.entity_key, rf.kind, rf.label, a, rf.attack_id,
                     rf.observed)
         r = score_fact(gone)

@@ -97,8 +97,9 @@ what runs, and fails closed when the scanner cannot tell:
   unclosed quote, an unquoted path whose shorter prefixes a user could plant)
   gets no floor.
 - **Location.** The file must sit where only administrators can write: the
-  Windows folder (less its user-writable corners), Program Files, or the
-  Defender platform folder. A Microsoft binary copied elsewhere — a renamed host,
+  Windows folder (less its user-writable corners), Program Files, or Defender's
+  two program folders under ProgramData (Platform and Definition Updates). A
+  driver's path is one file and is judged whole. A Microsoft binary copied elsewhere — a renamed host,
   or a signed program next to a planted DLL — is not floored on its signature.
   This fits the decision above: the floor stays a non-security gate and
   verified-gated; it only narrows what "known good" means. Microsoft software

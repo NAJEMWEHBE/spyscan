@@ -62,13 +62,13 @@ _USER_WRITABLE_UNDER_WINDOWS = (
     r"Microsoft.NET\Framework64\v4.0.30319\Temporary ASP.NET Files",
 )
 
-# Why a Microsoft-signed fact got no floor: shown as its first-look reason.
+# Why a Microsoft-signed fact got no floor: shown among its reasons (score.py).
 REFUSED_UNREADABLE = ("Microsoft-signed program, but its command line cannot be read "
                       "with confidence")
 REFUSED_OUTSIDE = ("Microsoft-signed program, but it runs from outside the Windows and "
                    "Program Files folders")
-REFUSED_PAYLOAD = ("Microsoft-signed program, but it is a host that its command hands "
-                   "something to run")
+REFUSED_PAYLOAD = ("Microsoft-signed program, but it can run other code and its command "
+                   "gives it something to run")
 REFUSED_TEMP = ("Microsoft-signed program, but its command reaches into a temp/AppData "
                 "folder")
 
@@ -150,14 +150,16 @@ def _is_host(names: set[str]) -> bool:
 def _in_system_folders(path: str) -> bool:
     """True when ``path`` (from _win_path) is in a folder only administrators
     can write to: the Windows folder (less its user-writable corners), Program
-    Files, or the Defender platform folder. A bare program name counts: the
-    signature probe looks it up in System32 and the Windows folder first."""
+    Files, or Defender's two program folders under ProgramData (Platform, and
+    Definition Updates, where its scan driver MpKslDrv.sys loads from). A bare
+    program name counts: the signature probe looks it up in System32 and the
+    Windows folder first."""
     if "\\" not in path:
         return True
     env = os.environ
     root = _system_root()
-    data = env.get("ProgramData") or "C:\\ProgramData"
-    inside = [root, ntpath.join(data, "Microsoft", "Windows Defender", "Platform")]
+    defender = ntpath.join(env.get("ProgramData") or "C:\\ProgramData", "Microsoft", "Windows Defender")
+    inside = [root, ntpath.join(defender, "Platform"), ntpath.join(defender, "Definition Updates")]
     inside += [env.get(k) or "" for k in ("ProgramFiles", "ProgramFiles(x86)", "ProgramW6432")]
     low = path.lower() + "\\"
 

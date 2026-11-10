@@ -219,8 +219,8 @@ def _first_look(run):
 def test_unfloored_microsoft_task_says_why_not_that_it_is_unproven():
     fd = _first_look(SYS + "\\rundll32.exe " + SYS + "\\shell32.dll,Control_RunDLL")
     assert fd.bucket == "INFO"
-    assert fd.reasons == ["+2 Microsoft-signed program, but it is a host that its command "
-                          "hands something to run (first look, no baseline)"]
+    assert fd.reasons == ["+2 Microsoft-signed program, but it can run other code and its "
+                          "command gives it something to run (first look, no baseline)"]
 
 
 @pytest.mark.parametrize("args", [

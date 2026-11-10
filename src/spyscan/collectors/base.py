@@ -116,6 +116,7 @@ class CommandCut:
 
 
 _BLANKS = " \t"
+_MAX_COMMAND = 32767        # the longest command line CreateProcess accepts
 
 
 def _has_extension(path: str) -> bool:
@@ -153,6 +154,8 @@ def split_command(cmd: str) -> CommandCut:
         return CommandCut(first, "", True)
     if _has_extension(first) or not any(s in first for s in "\\/"):
         return CommandCut(first, rest, True)
+    if len(c) > _MAX_COMMAND:
+        return CommandCut(first, rest, False)      # no real command: not worth the long search
     for n, i in enumerate(blanks[1:] + [len(c)], start=1):
         stem = c[:i].rstrip('"')
         if stem.rstrip(". ").lower().endswith(".exe"):

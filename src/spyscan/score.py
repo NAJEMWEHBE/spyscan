@@ -114,6 +114,10 @@ def score_fact(f: Fact) -> dict:
         # allowlist owns that wording): its binary IS proven, its command is not.
         why = a.get("floor_refused") or "persistence entry not proven Microsoft-signed"
         add(2, f"{why} (first look, no baseline)")
+    elif a.get("floor_refused"):
+        # a baseline scan: the refusal adds no points (the signals below do), but the
+        # user must see why a Microsoft-signed entry is scored like any other program
+        reasons.append(f"{a['floor_refused']}, so it is scored like any other program")
     if a.get("script_payload"):
         add(3, "script/proxy host launches a payload from a user-writable or remote place")
     if a.get("is_new"):
