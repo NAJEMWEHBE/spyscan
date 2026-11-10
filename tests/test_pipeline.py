@@ -100,12 +100,14 @@ def test_unknown_probe_temp_process_is_not_alert():
     assert not any("unsigned" in r.lower() for r in top.reasons)
 
 
-def test_signed_temp_process_enriched_floored_to_info():
-    # a NEW temp process is suspicious from cheap signals (is_new + from_temp);
-    # enrichment proves it's Microsoft-signed -> allowlisted to INFO/0.
+def test_signed_new_process_enriched_floored_to_info():
+    # a NEW process is an enrichment candidate (is_new + an exe path); enrichment
+    # proves it's Microsoft-signed in a protected folder -> allowlisted to INFO/0.
+    # (A Microsoft binary in a user-writable folder such as Windows\Temp gets no
+    # floor: tests/test_signature_floor_gaps.py.)
     base = []
     current = [Fact("processes", "processes::svc::svc", "process", "svc",
-                    {"exe": r"C:\Windows\Temp\svc.exe", "from_temp": True,
+                    {"exe": r"C:\Windows\System32\svc.exe", "from_temp": False,
                      "parent": "services.exe"})]
     m = IOCMatcher()
     findings = build_findings(base, current, m, signer=_ms_signer)
@@ -355,7 +357,7 @@ def test_ms_signed_but_defender_hit_still_not_info_end_to_end():
     # is known-bad and overrides it end-to-end, exactly as it overrides a user allowlist rule.
     base = []
     current = [Fact("autoruns", "autoruns::ms::ms", "autostart", "MsUpdate",
-                    {"exe": r"C:\ProgramData\ms.exe", "verified": True,
+                    {"exe": r"C:\Windows\System32\ms.exe", "verified": True,
                      "signer": "Microsoft Windows", "is_new": True})]
 
     def _defender(path):

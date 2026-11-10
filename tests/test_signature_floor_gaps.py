@@ -134,3 +134,96 @@ def test_authenticode_trusted_ms_needs_an_exact_microsoft_subject():
     assert parse_status(hcp)["trusted_ms"] is False
     real = "Valid|CN=Microsoft Windows, O=Microsoft Corporation, L=Redmond, S=Washington, C=US"
     assert parse_status(real)["trusted_ms"] is True
+
+
+# --- #4 for tasks and services: the floor reads the COMMAND, not just the host ----
+# A task holds its command in task_to_run, a service in path (the whole PathName).
+# The enrichment pass signs the program cut out of that command, so a Microsoft
+# script host there comes back trusted_ms -- the floor must still see its payload.
+
+def _task(run):
+    return {"name": r"\Evil", "task_to_run": run, "from_temp": False,
+            "trusted_ms": True, "verified": True, "signer": "Microsoft Windows"}
+
+
+def _service(path):
+    return {"name": "Evil", "path": path, "from_temp": False,
+            "trusted_ms": True, "verified": True, "signer": "Microsoft Windows"}
+
+
+_PS = r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
+
+_PAYLOAD_COMMANDS = [
+    "powershell.exe -nop -w hidden -enc SQBFAFgA",
+    _PS + " -enc SQBFAFgA",
+    r"C:\Windows\System32\cmd.exe /c net user x y /add",
+    "cmd /c whoami",
+    '"' + _PS + '" -nop -enc SQBFAFgA',
+    r'"C:\Windows\System32\cmd.exe" /c "C:\Program Files\x y\run me.bat"',
+    r"C:\Windows\System32\rundll32.exe C:\ProgramData\x\x.dll,Start",
+]
+
+
+@pytest.mark.parametrize("cmd", _PAYLOAD_COMMANDS)
+def test_ms_script_host_task_with_a_payload_is_not_floored(cmd):
+    assert Allowlist().matches(_task(cmd))[0] is False
+
+
+@pytest.mark.parametrize("cmd", _PAYLOAD_COMMANDS)
+def test_ms_script_host_service_with_a_payload_is_not_floored(cmd):
+    assert Allowlist().matches(_service(cmd))[0] is False
+
+
+@pytest.mark.parametrize("cmd", [
+    r"C:\Windows\System32\sc.exe",
+    r"%windir%\system32\defrag.exe -c -h -o -$",
+    r'"C:\Program Files\Windows Defender\MpCmdRun.exe" -IdleTask -TaskName WdCleanup',
+    "powershell.exe",
+    '"' + _PS + '"',
+])
+def test_plain_ms_task_still_floors(cmd):
+    assert Allowlist().matches(_task(cmd)) == (True, "allowlisted: Microsoft-signed")
+
+
+@pytest.mark.parametrize("path", [
+    r"C:\Windows\system32\svchost.exe -k netsvcs -p",
+    r'"C:\ProgramData\Microsoft\Windows Defender\Platform\4.18.1\MsMpEng.exe"',
+    r"C:\Windows\System32\cmd.exe",
+    r'"C:\Program Files\Microsoft Thing\helper.dll"',
+])
+def test_plain_ms_service_still_floors(path):
+    assert Allowlist().matches(_service(path)) == (True, "allowlisted: Microsoft-signed")
+
+
+def test_ms_binary_task_whose_arguments_reach_into_appdata_is_not_floored():
+    run = r"C:\Windows\System32\conhost.exe C:\Users\v\AppData\Local\Temp\p.bin"
+    assert Allowlist().matches(_task(run))[0] is False
+
+
+def test_encoded_powershell_task_and_service_are_scored_not_floored_end_to_end():
+    run = "powershell.exe -nop -w hidden -enc SQBFAFgA"
+    task = Fact("services_tasks", "services_tasks::task::evil", "scheduled_task",
+                "task: Evil", {"name": "Evil", "task_to_run": run, "from_temp": False})
+    fd, calls = _finding(task, MS)
+    assert len(calls) == 1 and calls[0].lower().endswith("powershell.exe")
+    assert "allowlisted: Microsoft-signed" not in fd.reasons
+    assert fd.bucket == "REVIEW"                      # +4 new persistence
+
+    svc = Fact("services_tasks", "services_tasks::service::evil", "service",
+               "service: Evil", {"name": "Evil", "path": '"' + _PS + '" -enc SQBFAFgA',
+                                 "from_temp": False})
+    fd, calls = _finding(svc, MS)
+    assert calls == [_PS]
+    assert "allowlisted: Microsoft-signed" not in fd.reasons
+    assert fd.bucket == "REVIEW"
+
+
+def test_first_look_flags_an_encoded_script_host_task_as_a_payload():
+    task = Fact("services_tasks", "services_tasks::task::evil", "scheduled_task",
+                "task: Evil", {"name": "Evil", "from_temp": False,
+                               "task_to_run": "powershell.exe -nop -enc SQBFAFgA"})
+    out = build_findings([], [task], IOCMatcher(), signer=lambda p: dict(MS),
+                         allowlist=Allowlist(), log=lambda *a: None, first_look=True)
+    fd = out[0]
+    assert fd.fact.attrs.get("script_payload") is True
+    assert fd.bucket == "REVIEW"                      # +2 first look, +3 payload

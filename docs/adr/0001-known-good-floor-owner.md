@@ -84,3 +84,30 @@ built-in Microsoft rule included — can never silence real malware.
 - `score_fact` alone no longer floors a raw `trusted_ms` fact — it requires `allowlisted` (set by the
   pipeline). Unit tests that hand-built Microsoft facts and expected `score_fact` to floor them are
   relocated to the allowlist/pipeline level, where the behavior now lives.
+
+## Amendment — what the Microsoft floor vouches for (2026-11)
+
+A signature vouches for one file. The floor now holds only when that file is
+what runs, and fails closed when the scanner cannot tell:
+
+- The program is read the way Windows runs it and the signature probe verified
+  it: variables expanded, the path normalised as Win32 does, a task or service
+  command cut the way `CreateProcess` cuts it (one shared cut for the probe and
+  the floor). A command it cannot read with confidence (`..`, a stream name, an
+  unclosed quote, an unquoted path whose shorter prefixes a user could plant)
+  gets no floor.
+- **Location.** The file must sit where only administrators can write: the
+  Windows folder (less its user-writable corners), Program Files, or the
+  Defender platform folder. A Microsoft binary copied elsewhere — a renamed host,
+  or a signed program next to a planted DLL — is not floored on its signature.
+  This fits the decision above: the floor stays a non-security gate and
+  verified-gated; it only narrows what "known good" means. Microsoft software
+  installed per user (under AppData) is scored on its other signals instead.
+- **Hosts.** A script or proxy host (`rules/proxy_hosts.py`, from the LOLBAS
+  project) known by its file name or the PE OriginalFilename of the verified
+  file keeps the floor only when launched bare (or with an exact argument
+  string Windows itself registers, such as the Windows Installer service's
+  `/V`).
+- A Microsoft-signed entry refused the floor carries the reason
+  (`floor_refused`), so a first look says why instead of "not proven
+  Microsoft-signed".
