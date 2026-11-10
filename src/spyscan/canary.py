@@ -269,7 +269,8 @@ def check(state_path: Path | None = None, now: float = 0.0) -> list[dict]:
         if not p.exists():
             out.append({"path": rec["path"], "tripped": True,
                         "reasons": ["canary missing (deleted/moved/renamed)"],
-                        "evidence": {"path": rec["path"], "expected_sha256": rec["sha256"]}})
+                        "evidence": {"path": rec["path"], "expected_sha256": rec["sha256"]},
+                        "planted_at": rec.get("planted_at")})
             continue
 
         try:
@@ -286,7 +287,8 @@ def check(state_path: Path | None = None, now: float = 0.0) -> list[dict]:
             # unreadable now but was readable at deploy -> treat as a trip
             out.append({"path": rec["path"], "tripped": True,
                         "reasons": [f"canary unreadable now ({e.__class__.__name__})"],
-                        "evidence": {"path": rec["path"]}})
+                        "evidence": {"path": rec["path"]},
+                        "planted_at": rec.get("planted_at")})
             continue
 
         # RELIABLE signals -- any of these flips tripped=True.

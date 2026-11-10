@@ -168,3 +168,42 @@ def test_audit_regroup_is_case_insensitive(tmp_path, monkeypatch):
     f = canary_collector.parse(rows)[0]
     assert f.observed["accessed_by"] == [r"C:\Temp\stealer.exe"]
     assert "stealer.exe" in f.label
+
+
+def _missing_and_unreadable(tmp_path, monkeypatch):
+    """Two decoys planted at T0: one deleted since, one unreadable now."""
+    state = tmp_path / "s.json"
+    canary.deploy(targets=[tmp_path / "d"], state_path=state, now=T0,
+                  names=["passwords.txt", "wallet_seed.txt"])
+    gone, locked = tmp_path / "d" / "passwords.txt", tmp_path / "d" / "wallet_seed.txt"
+    gone.unlink()
+    real_sha = canary._sha256
+
+    def sha(p):
+        if Path(p) == locked:
+            raise PermissionError("locked")
+        return real_sha(p)
+    monkeypatch.setattr(canary, "_sha256", sha)
+    return state, gone, locked
+
+
+def test_missing_and_unreadable_rows_keep_planted_at(tmp_path, monkeypatch):
+    state, _, _ = _missing_and_unreadable(tmp_path, monkeypatch)
+    rows = canary.check(state, now=T0 + 600)
+    assert [r["reasons"][0].split(" (")[0] for r in rows] == ["canary missing",
+                                                              "canary unreadable now"]
+    assert [r.get("planted_at") for r in rows] == [T0, T0]
+
+
+def test_access_before_planting_is_not_blamed_on_a_missing_or_unreadable_decoy(
+        tmp_path, monkeypatch):
+    # an earlier decoy at the same path was read long before this one was planted
+    from spyscan import canary_audit as _audit
+    state, gone, locked = _missing_and_unreadable(tmp_path, monkeypatch)
+    monkeypatch.setattr(_audit, "gather", lambda paths, since=None: [
+        {"object_name": str(p), "process_name": r"C:\Tools\old_reader.exe",
+         "time": "2023-11-01T09:00:00.0000000Z", "access_mask": "0x1"}
+        for p in (gone, locked)])
+    rows = canary_collector.gather(state_path=state, now=T0 + 600)
+    assert [r["audit"] for r in rows] == [[], []]
+    assert all("old_reader" not in f.label for f in canary_collector.parse(rows))
