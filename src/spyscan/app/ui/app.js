@@ -42,6 +42,12 @@ async function postJSON(url) {
   });
   return { ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) };
 }
+// Why a postJSON result failed ("" when it did not): postJSON never throws on an
+// HTTP error, so every caller must check this before reporting success.
+function postError({ ok, status, data }) {
+  if (ok && !(data && data.ok === false)) return "";
+  return data && data.error ? String(data.error) : `HTTP ${status}`;
+}
 
 /* ---------- status / baseline / allowlist ---------- */
 
@@ -133,9 +139,15 @@ async function doCanaryDeploy() {
   const old = btn.textContent;
   btn.textContent = "Planting...";
   try {
-    const { data } = await postJSON("/api/canary/deploy");
+    const res = await postJSON("/api/canary/deploy");
     btn.textContent = old; btn.disabled = false;
     await refreshCanary();
+    const err = postError(res);
+    if (err) {
+      $("canaryStatus").textContent = `Could not deploy decoys (${err}).`;
+      return;
+    }
+    const { data } = res;
     $("canaryStatus").innerHTML =
       `Planted <strong>${data.planted || 0}</strong> decoy file${(data.planted === 1) ? "" : "s"}. ` +
       `<span class="muted">Now run scans normally - a trip shows as an ALERT.</span>`;
@@ -152,11 +164,16 @@ async function doCanaryClear() {
   const old = btn.textContent;
   btn.textContent = "Clearing...";
   try {
-    await postJSON("/api/canary/clear");
+    const err = postError(await postJSON("/api/canary/clear"));
     btn.textContent = old;
     await refreshCanary();
+    if (err) {
+      $("canaryStatus").textContent =
+        `Could not clear the decoys (${err}). Some may still be on disk.`;
+    }
   } catch (e) {
     btn.textContent = old; btn.disabled = false;
+    $("canaryStatus").textContent = "Could not clear the decoys (local service error).";
   }
 }
 
@@ -277,13 +294,15 @@ async function doBaseline() {
   const old = baselineBtn.textContent;
   baselineBtn.textContent = "Saving baseline...";
   try {
-    const { data } = await postJSON("/api/baseline");
+    const err = postError(await postJSON("/api/baseline"));
     baselineBtn.textContent = old;
     baselineBtn.disabled = false;
     await refreshStatus();
+    if (err) $("baselineStatus").textContent = `Could not save the baseline (${err}).`;
   } catch (e) {
     baselineBtn.textContent = old;
     baselineBtn.disabled = false;
+    $("baselineStatus").textContent = "Could not save the baseline (local service error).";
   }
 }
 
