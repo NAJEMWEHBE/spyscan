@@ -40,8 +40,11 @@ async function postJSON(url) {
     headers: { "Content-Type": "application/json" },
     body: "{}",
   });
-  // A reply that says OK but cannot be read is not a success: the result is unknown.
-  const unread = r.ok ? { ok: false, error: "unreadable reply from the local service" } : {};
+  // A reply that says OK but cannot be read is not a success and not a failure:
+  // the result is unknown (failureMessage says so).
+  const unread = r.ok
+    ? { ok: false, unread: true, error: "the local service's reply could not be read" }
+    : {};
   return { ok: r.ok, status: r.status, data: await r.json().catch(() => unread) };
 }
 // Why a postJSON result failed ("" when it did not): postJSON never throws on an
@@ -49,6 +52,18 @@ async function postJSON(url) {
 function postError({ ok, status, data }) {
   if (ok && !(data && data.ok === false)) return "";
   return data && data.error ? String(data.error) : `HTTP ${status}`;
+}
+// What to show for a postJSON result that is not a success ("" when it is one).
+// After an unreadable OK reply the action may have worked, so the text says the
+// result is unknown and points at the state the panel has just re-read, not at
+// a retry (a second deploy would plant more decoys).
+function failureMessage(res, failed, unknown) {
+  const err = postError(res);
+  if (!err) return "";
+  return res.data && res.data.unread
+    ? `The local service's reply could not be read, so it is not known whether ${unknown}. ` +
+      "Check what is shown here before trying again."
+    : `${failed} (${err}).`;
 }
 
 /* ---------- status / baseline / allowlist ---------- */
@@ -144,9 +159,9 @@ async function doCanaryDeploy() {
     const res = await postJSON("/api/canary/deploy");
     btn.textContent = old; btn.disabled = false;
     await refreshCanary();
-    const err = postError(res);
-    if (err) {
-      $("canaryStatus").textContent = `Could not deploy decoys (${err}).`;
+    const failed = failureMessage(res, "Could not deploy decoys", "the decoys were planted");
+    if (failed) {
+      $("canaryStatus").textContent = failed;
       return;
     }
     const { data } = res;
@@ -166,15 +181,13 @@ async function doCanaryClear() {
   const old = btn.textContent;
   btn.textContent = "Clearing...";
   try {
-    const err = postError(await postJSON("/api/canary/clear"));
+    const failed = failureMessage(await postJSON("/api/canary/clear"),
+                                  "Could not clear the decoys", "the decoys were removed");
     // Enabled again before the refresh: refreshCanary sets it from the real
     // state, and leaves it alone when the status cannot be read.
     btn.textContent = old; btn.disabled = false;
     await refreshCanary();
-    if (err) {
-      $("canaryStatus").textContent =
-        `Could not clear the decoys (${err}). Some may still be on disk.`;
-    }
+    if (failed) $("canaryStatus").textContent = failed + " Some may still be on disk.";
   } catch (e) {
     btn.textContent = old; btn.disabled = false;
     $("canaryStatus").textContent = "Could not clear the decoys (local service error).";
@@ -298,11 +311,12 @@ async function doBaseline() {
   const old = baselineBtn.textContent;
   baselineBtn.textContent = "Saving baseline...";
   try {
-    const err = postError(await postJSON("/api/baseline"));
+    const failed = failureMessage(await postJSON("/api/baseline"),
+                                  "Could not save the baseline", "the baseline was saved");
     baselineBtn.textContent = old;
     baselineBtn.disabled = false;
     await refreshStatus();
-    if (err) $("baselineStatus").textContent = `Could not save the baseline (${err}).`;
+    if (failed) $("baselineStatus").textContent = failed;
   } catch (e) {
     baselineBtn.textContent = old;
     baselineBtn.disabled = false;
