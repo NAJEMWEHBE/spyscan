@@ -2,14 +2,16 @@
 from __future__ import annotations
 from pathlib import Path
 from spyscan.facts import Fact, image_path_of, make_key
-from spyscan.collectors.base import exe_from_command
+from spyscan.collectors.base import split_command
 from spyscan.finding import Finding
 from spyscan.diff import diff_facts
 from spyscan.score import score_fact, no_resolvable_parent
 from spyscan.rules.ioc import IOCMatcher
-from spyscan.allowlist import Allowlist, script_host_args
+from spyscan.rules.proxy_hosts import POWERSHELL_HOSTS
+from spyscan.allowlist import Allowlist, microsoft_floor, script_host_args
 from spyscan.enrich import signature as _signature
 from spyscan.enrich import hashing as _hashing
+from spyscan.enrich import peinfo as _peinfo
 from spyscan.resources import bundle_dir
 
 
@@ -87,11 +89,13 @@ def _exe_path_for(f: Fact) -> str:
     """Resolvable on-disk image path for a fact, or '' if none.
 
     Services and tasks hold a COMMAND LINE (PathName / Task To Run), so the
-    program is cut out of it first (audit #5)."""
+    program is cut out of it first (audit #5), the way CreateProcess cuts it
+    and the Microsoft floor reads it (split_command), so the file signed is
+    the file that runs."""
     if f.kind == "scheduled_task":
-        return exe_from_command(str(f.attrs.get("task_to_run") or ""))
+        return split_command(str(f.attrs.get("task_to_run") or "")).program
     if f.kind == "service":
-        return exe_from_command(image_path_of(f.attrs))
+        return split_command(image_path_of(f.attrs)).program
     return image_path_of(f.attrs)
 
 
@@ -125,16 +129,44 @@ def _is_enrich_candidate(finding: "Finding") -> bool:
 _PAYLOAD_PLACES = ("\\users\\", "\\programdata\\", "\\appdata\\", "\\temp\\",
                    "http://", "https://", "vbscript:", "javascript:")
 _ENCODED_FLAGS = frozenset({"-e", "-ec", "-en", "-enc", "-encodedcommand"})
+# PowerShell reads a parameter from '-' or '/', and from the en dash, em dash and
+# horizontal bar a copy-pasted command line may carry.
+_PS_FLAG_CHARS = "-/\u2013\u2014\u2015"
+
+
+def _ps_inline_script(args: str) -> bool:
+    """True when PowerShell arguments carry the script itself: -EncodedCommand
+    by any prefix PowerShell accepts (-e, -ec, -en, -enc, -enco...), or
+    -Command (-c, -co...) followed by script text."""
+    toks = args.split()
+    for i, tok in enumerate(toks):
+        tok = tok.strip("\"'")
+        if not tok or tok[0] not in _PS_FLAG_CHARS:
+            continue
+        name = tok[1:].split(":", 1)[0].lower()
+        if name in ("e", "ec") or (len(name) >= 2 and (
+                "encodedcommand".startswith(name) or "encodedarguments".startswith(name))):
+            return True
+        if (name == "c" or (len(name) >= 2 and "command".startswith(name))) and i + 1 < len(toks):
+            return True
+    return False
 
 
 def _script_payload(a: dict) -> bool:
     """True when a script/proxy host is handed a payload from a user-writable or
-    remote place (rundll32 with a System32 DLL is not; with a ProgramData one is)."""
-    for args in script_host_args(a):
-        low = args.lower()
-        if low.startswith("\\\\") or " \\\\" in low or any(p in low for p in _PAYLOAD_PLACES):
+    remote place (rundll32 with a System32 DLL is not; with a ProgramData one is),
+    or PowerShell is handed the script inline. Variables in the arguments are
+    expanded first (script_host_args), so a raw %TEMP% counts."""
+    for host, args in script_host_args(a):
+        raw = args.lower()
+        low = raw.replace("/", "\\")              # C:/Users/... is a user folder too
+        if raw.startswith("\\\\") or " \\\\" in raw or any(
+                p in low or p in raw for p in _PAYLOAD_PLACES):
             return True
-        if any(t in _ENCODED_FLAGS for t in low.split()):
+        if any(t in _ENCODED_FLAGS for t in raw.split()):
+            return True
+        if (host in POWERSHELL_HOSTS or "powershell" in low or "pwsh" in low) and \
+                _ps_inline_script(args):
             return True
     return False
 
@@ -145,22 +177,39 @@ def _under_windir(path: str) -> bool:
 
 
 def _apply_allowlist(a: dict, entity_key: str, allowlist: Allowlist,
-                     observed: dict | None = None) -> None:
+                     observed: dict | None = None, kind: str = "") -> None:
     """Set a['allowlisted']/a['allowlist_reason'] in place if the fact matches a
     user allowlist rule. score_fact treats this exactly like the Microsoft floor
     (known-bad always overrides), so it can never hide real malware.
 
     A process's command lines live in ``observed`` (volatile, never diffed) but
     the Microsoft floor must see them: an MS-signed powershell.exe running a
-    payload is not "known good" (audit #4)."""
+    payload is not "known good" (audit #4).
+
+    Each call decides afresh: after enrichment the floor may be refused where
+    the cheap pass gave it (the verified file turned out to be a renamed script
+    host). When a Microsoft-signed fact is refused, a['floor_refused'] says why,
+    so scoring can give it a true reason.
+
+    A driver's ``path`` is one file, never a command line: it is handed to the
+    floor as the parsed image, the same whole path the signature probe verified
+    (_exe_path_for), so a blank in its folder name is not read as an argument."""
     attrs = dict(a)
     attrs.setdefault("entity_key", entity_key)
+    if kind == "driver" and a.get("path"):
+        attrs.setdefault("image", str(a["path"]))
     if observed and observed.get("cmdlines"):
         attrs.setdefault("cmdlines", list(observed["cmdlines"]))
+    for key in ("allowlisted", "allowlist_reason", "floor_refused"):
+        a.pop(key, None)
     ok, reason = allowlist.matches(attrs)
     if ok:
         a["allowlisted"] = True
         a["allowlist_reason"] = reason
+    else:
+        _floored, why = microsoft_floor(attrs)
+        if why:
+            a["floor_refused"] = why
 
 
 def build_findings(baseline: list[Fact], current: list[Fact],
@@ -237,7 +286,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
                 a["script_payload"] = True
 
         # user allowlist (floors to INFO in score_fact unless known-bad fires)
-        _apply_allowlist(a, f.entity_key, allowlist, f.observed)
+        _apply_allowlist(a, f.entity_key, allowlist, f.observed, f.kind)
 
         enriched = Fact(f.collector, f.entity_key, f.kind, f.label, a, f.attack_id,
                         f.observed)
@@ -281,6 +330,11 @@ def build_findings(baseline: list[Fact], current: list[Fact],
                 for k in _SIGNER_ATTRS:
                     if k in sig:
                         a[k] = sig[k]
+                # the Microsoft floor judges the file this probe verified: its
+                # folder, and the name built into it (a renamed cmd.exe is still
+                # cmd), not a re-spelling of the command line
+                a["signed_image"] = path
+                a["original_filename"] = _peinfo.original_filename(path)
         except Exception:
             pass  # treat as unknown -- never crash the scan
         # hash enrichment: compute the file's sha256 so a user sha256/md5 allowlist
@@ -311,7 +365,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
                 defender_skipped += 1
         # re-apply the allowlist: enrichment may have resolved a signer/sha that
         # now matches a signer/hash rule (path_globs already matched in pass 1).
-        _apply_allowlist(a, fd.fact.entity_key, allowlist, fd.fact.observed)
+        _apply_allowlist(a, fd.fact.entity_key, allowlist, fd.fact.observed, fd.fact.kind)
         # re-score with the freshly-enriched attrs (interacts with FIX 1: a now-
         # signed temp app can be allowlisted; a now-flagged one escalates)
         r = score_fact(fd.fact)
@@ -333,7 +387,7 @@ def build_findings(baseline: list[Fact], current: list[Fact],
         a = dict(rf.attrs)
         a["removed_since_baseline"] = True
         a.pop("is_new", None)  # a removed entry is not "new"; drop any stale baseline flag
-        _apply_allowlist(a, rf.entity_key, allowlist, rf.observed)
+        _apply_allowlist(a, rf.entity_key, allowlist, rf.observed, rf.kind)
         gone = Fact(rf.collector, rf.entity_key, rf.kind, rf.label, a, rf.attack_id,
                     rf.observed)
         r = score_fact(gone)

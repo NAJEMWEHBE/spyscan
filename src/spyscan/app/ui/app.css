@@ -29,6 +29,8 @@
 }
 
 * { box-sizing: border-box; }
+/* the hidden attribute always wins over a class's display (.verdict is flex) */
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;

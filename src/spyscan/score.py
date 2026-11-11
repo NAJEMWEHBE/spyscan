@@ -109,8 +109,15 @@ def score_fact(f: Fact) -> dict:
     if a.get("first_look") and f.kind in _PERSISTENCE_KINDS:
         # first look (audit #18): no baseline, so nothing is "new"; a persistence
         # entry not proven Microsoft-signed (those floored above) is the base
-        # signal, and only climbs to REVIEW with a second one (unsigned, temp...)
-        add(2, "persistence entry not proven Microsoft-signed (first look, no baseline)")
+        # signal, and only climbs to REVIEW with a second one (unsigned, temp...).
+        # A Microsoft-signed entry the floor refused says why instead (the
+        # allowlist owns that wording): its binary IS proven, its command is not.
+        why = a.get("floor_refused") or "persistence entry not proven Microsoft-signed"
+        add(2, f"{why} (first look, no baseline)")
+    elif a.get("floor_refused"):
+        # a baseline scan: the refusal adds no points (the signals below do), but the
+        # user must see why a Microsoft-signed entry is scored like any other program
+        reasons.append(f"{a['floor_refused']}, so it is scored like any other program")
     if a.get("script_payload"):
         add(3, "script/proxy host launches a payload from a user-writable or remote place")
     if a.get("is_new"):
