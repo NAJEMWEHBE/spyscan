@@ -345,7 +345,8 @@ def test_ms_signed_autoruns_fact_floors_to_info_via_builtin_allowlist():
     # preserved the old pass-1 autoruns MS floor.
     base = []
     current = [Fact("autoruns", "autoruns::ms::ms", "autostart", "MsUpdate",
-                    {"verified": True, "signer": "Microsoft Windows"})]
+                    {"image_path": r"C:\Windows\System32\ms.exe",
+                     "verified": True, "signer": "Microsoft Windows"})]
     findings = build_findings(base, current, IOCMatcher(), allowlist=Allowlist())
     top = findings[0]
     assert top.bucket == "INFO"
@@ -397,7 +398,8 @@ def test_removed_ephemeral_process_is_not_a_finding():
 
 def test_removed_ms_signed_persistence_is_info_via_allowlist_floor():
     base = [Fact("autoruns", "autoruns::ms::ms", "autostart", "MsUpd",
-                 {"verified": True, "signer": "Microsoft Windows"})]
+                 {"image_path": r"C:\Windows\System32\ms.exe",
+                  "verified": True, "signer": "Microsoft Windows"})]
     current = []
     findings = build_findings(base, current, IOCMatcher(), allowlist=Allowlist())
     ms = [f for f in findings if f.fact.entity_key == "autoruns::ms::ms"]

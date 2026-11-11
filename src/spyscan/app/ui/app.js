@@ -40,7 +40,9 @@ async function postJSON(url) {
     headers: { "Content-Type": "application/json" },
     body: "{}",
   });
-  return { ok: r.ok, status: r.status, data: await r.json().catch(() => ({})) };
+  // A reply that says OK but cannot be read is not a success: the result is unknown.
+  const unread = r.ok ? { ok: false, error: "unreadable reply from the local service" } : {};
+  return { ok: r.ok, status: r.status, data: await r.json().catch(() => unread) };
 }
 // Why a postJSON result failed ("" when it did not): postJSON never throws on an
 // HTTP error, so every caller must check this before reporting success.
@@ -165,7 +167,9 @@ async function doCanaryClear() {
   btn.textContent = "Clearing...";
   try {
     const err = postError(await postJSON("/api/canary/clear"));
-    btn.textContent = old;
+    // Enabled again before the refresh: refreshCanary sets it from the real
+    // state, and leaves it alone when the status cannot be read.
+    btn.textContent = old; btn.disabled = false;
     await refreshCanary();
     if (err) {
       $("canaryStatus").textContent =

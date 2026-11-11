@@ -1,6 +1,6 @@
 # tests/test_allowlist.py
 import json
-from spyscan.allowlist import Allowlist
+from spyscan.allowlist import REFUSED_OUTSIDE, REFUSED_UNNAMED, Allowlist, microsoft_floor
 
 
 def _write(tmp_path, data):
@@ -108,13 +108,32 @@ def test_empty_allowlist_matches_nothing(tmp_path):
 
 def test_builtin_trusted_ms_matches_even_empty_allowlist(tmp_path):
     al = Allowlist.load(tmp_path / "nope.json")  # empty user allowlist
-    matched, reason = al.matches({"trusted_ms": True})
+    matched, reason = al.matches({"trusted_ms": True, "exe": r"C:\Windows\System32\svchost.exe"})
     assert matched is True and "microsoft-signed" in reason.lower()
 
 
 def test_builtin_verified_microsoft_signer_matches():
-    matched, reason = Allowlist().matches({"verified": True, "signer": "Microsoft Windows"})
+    matched, reason = Allowlist().matches({"verified": True, "signer": "Microsoft Windows",
+                                           "image_path": r"C:\Windows\System32\svchost.exe"})
     assert matched is True and "microsoft-signed" in reason.lower()
+
+
+def test_builtin_floor_needs_a_named_program():
+    # a verified Microsoft signer on an entry that names no program: there is
+    # nothing for the signature to stand for
+    attrs = {"verified": True, "signer": "Microsoft Windows"}
+    assert microsoft_floor(attrs) == (False, REFUSED_UNNAMED)
+    assert Allowlist().matches(attrs)[0] is False
+
+
+def test_autoruns_row_with_a_blank_image_path_is_judged_by_its_launch_string():
+    # Autoruns can leave Image Path blank and still give a Launch String: the
+    # program is cut out of it, and the location rule applies to that program
+    ms = {"verified": True, "signer": "Microsoft Windows", "image_path": ""}
+    outside = {**ms, "launch_string": r"C:\Users\v\Documents\updater.exe /background"}
+    assert microsoft_floor(outside) == (False, REFUSED_OUTSIDE)
+    inside = {**ms, "launch_string": r"C:\Windows\System32\SecurityHealthSystray.exe"}
+    assert microsoft_floor(inside) == (True, "")
 
 
 def test_builtin_unverified_microsoft_signer_does_not_match():

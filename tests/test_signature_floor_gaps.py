@@ -113,7 +113,8 @@ def test_plain_ms_autostart_still_floors():
     "CN=Microsoft Corporation, O=Microsoft Corporation, L=Redmond, S=Washington, C=US",
 ])
 def test_real_microsoft_signers_floor(signer):
-    assert Allowlist().matches({"verified": True, "signer": signer})[0] is True
+    attrs = {"verified": True, "signer": signer, "image_path": r"C:\Windows\System32\svchost.exe"}
+    assert Allowlist().matches(attrs)[0] is True
 
 
 @pytest.mark.parametrize("signer", [
@@ -125,7 +126,8 @@ def test_real_microsoft_signers_floor(signer):
     "Microsoftware Solutions Inc",
 ])
 def test_lookalike_or_third_party_microsoft_signers_do_not_floor(signer):
-    assert Allowlist().matches({"verified": True, "signer": signer})[0] is False
+    attrs = {"verified": True, "signer": signer, "image_path": r"C:\Windows\System32\svchost.exe"}
+    assert Allowlist().matches(attrs)[0] is False
 
 
 def test_authenticode_trusted_ms_needs_an_exact_microsoft_subject():

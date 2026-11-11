@@ -65,6 +65,7 @@ _USER_WRITABLE_UNDER_WINDOWS = (
 # Why a Microsoft-signed fact got no floor: shown among its reasons (score.py).
 REFUSED_UNREADABLE = ("Microsoft-signed program, but its command line cannot be read "
                       "with confidence")
+REFUSED_UNNAMED = "Microsoft-signed, but the entry does not name the program it runs"
 REFUSED_OUTSIDE = ("Microsoft-signed program, but it runs from outside the Windows and "
                    "Program Files folders")
 REFUSED_PAYLOAD = ("Microsoft-signed program, but it can run other code and its command "
@@ -221,7 +222,9 @@ def _command_view(attrs: dict) -> tuple[str, bool, list[str], list[CommandCut]]:
     taken as it is. A task holds its command in ``task_to_run`` and a service
     in ``path`` (the whole PathName): there the program is cut out of the
     command the same way the signature probe cuts it (pipeline._exe_path_for),
-    so the floor and the signature judge the same file."""
+    so the floor and the signature judge the same file. An Autoruns row with
+    a blank Image Path is cut out of its ``launch_string``. With none of
+    these the image is "": the fact names no program."""
     image = ""
     for key in _PARSED_IMAGE_ATTRS:
         image = str(attrs.get(key) or "").strip()
@@ -237,14 +240,17 @@ def _command_view(attrs: dict) -> tuple[str, bool, list[str], list[CommandCut]]:
         if not image:
             cut = split_command(run)
             image, exact = cut.program, _cut_is_sure(cut)
+    if not image and commands[0].strip():
+        cut = split_command(commands[0].strip())
+        image, exact = cut.program, _cut_is_sure(cut)
     commands = [c for c in commands if c.strip()]
     return image, exact, commands, [_cut_launch(c, image) for c in commands]
 
 
 def _host_launches(attrs: dict) -> tuple[str | None, list[tuple[set[str], CommandCut | None]]]:
     """(refusal, hosts). ``refusal`` says why the program itself cannot stand
-    for what the signature verified (unreadable, or outside the protected
-    folders), else None. ``hosts`` is every launch that runs a script/proxy
+    for what the signature verified (not named, unreadable, or outside the
+    protected folders), else None. ``hosts`` is every launch that runs a script/proxy
     host, with the host's names; a launch whose program cannot be read is
     listed with None (it may be one)."""
     image, exact, _commands, launches = _command_view(attrs)
@@ -254,7 +260,9 @@ def _host_launches(attrs: dict) -> tuple[str | None, list[tuple[set[str], Comman
     refusal = None
     if path is None or image_path is None or not exact:
         refusal = REFUSED_UNREADABLE
-    elif path and not _in_system_folders(path):
+    elif not path:
+        refusal = REFUSED_UNNAMED
+    elif not _in_system_folders(path):
         refusal = REFUSED_OUTSIDE
     names = {_exe_name(str(attrs.get("original_filename") or "")),
              _exe_name(path or ""), _exe_name(image_path or "")} - {""}
@@ -282,7 +290,7 @@ def microsoft_floor(attrs: dict) -> tuple[bool, str]:
     `or` stays (enriched facts set trusted_ms; autoruns facts set verified+signer
     but not trusted_ms).
 
-    "Runs only itself" fails closed. The program must be readable, sit in a
+    "Runs only itself" fails closed. The program must be named and readable, sit in a
     folder only administrators can write to, and when it is a script or proxy
     host (by its file name or the OriginalFilename the enrichment read from the
     verified file, so a renamed copy is still known) every launch must be that
